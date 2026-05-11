@@ -96,3 +96,22 @@
   font-size: 0.75rem;
   color: var(--text-secondary);
 }
+
+.mobile-menu-btn {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .topbar {
+    padding: 0 1rem;
+  }
+  .user-info {
+    display: none;
+  }
+  .role-switcher {
+    display: none;
+  }
+  .mobile-menu-btn {
+    display: flex;
+  }
+}

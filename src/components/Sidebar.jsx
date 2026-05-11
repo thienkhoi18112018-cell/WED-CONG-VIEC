@@ -1,19 +1,22 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, HardHat, PenTool, FileText, DollarSign, Settings } from 'lucide-react';
+import { LayoutDashboard, HardHat, PenTool, FileText, DollarSign, Settings, X } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
-import './Sidebar.css'; // Optional: We will put some specific styles here
+import './Sidebar.css'; 
 
-const Sidebar = () => {
+const Sidebar = ({ isOpen, closeSidebar }) => {
   const { role } = useAppContext();
 
   return (
-    <aside className="sidebar glass-panel">
+    <aside className={`sidebar glass-panel ${isOpen ? 'open' : ''}`}>
       <div className="sidebar-header">
         <div className="logo-icon">
           <HardHat size={28} color="var(--accent-primary)" />
         </div>
         <h1 className="logo-text">HDCONS</h1>
+        <button className="icon-btn mobile-close-btn" onClick={closeSidebar}>
+          <X size={24} />
+        </button>
       </div>
       
       <nav className="sidebar-nav">

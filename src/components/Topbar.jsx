@@ -1,10 +1,10 @@
 import React from 'react';
-import { Moon, Sun, Bell, UserCircle, LogOut } from 'lucide-react';
+import { Moon, Sun, Bell, UserCircle, LogOut, Menu } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { useNavigate } from 'react-router-dom';
 import './Topbar.css';
 
-const Topbar = () => {
+const Topbar = ({ toggleSidebar }) => {
   const { role, toggleRole, theme, toggleTheme, logout } = useAppContext();
   const navigate = useNavigate();
 
@@ -15,7 +15,10 @@ const Topbar = () => {
 
   return (
     <header className="topbar glass-panel">
-      <div className="topbar-left">
+      <div className="topbar-left flex items-center gap-2">
+        <button className="icon-btn mobile-menu-btn" onClick={toggleSidebar}>
+          <Menu size={24} />
+        </button>
         {/* Empty for now, can put breadcrumbs here */}
       </div>
 
