@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
-import { ArrowLeft, CheckCircle, Edit, Trash2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Edit, Trash2, Camera, Upload } from 'lucide-react';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { storage } from '../firebase';
 
 const ProjectDetail = () => {
   const { id } = useParams();
   const { projects, updateProject, addDailyLog, updateDailyLog, removeDailyLog, addTransaction, updateTransaction, removeTransaction } = useAppContext();
-  const project = projects.find(p => p.id === parseInt(id));
+  const project = projects.find(p => p?.id?.toString() === id?.toString());
 
   const [activeTab, setActiveTab] = useState('LOGS');
   
@@ -17,6 +19,8 @@ const ProjectDetail = () => {
   const [logWeather, setLogWeather] = useState('Nắng');
   const [logWorkers, setLogWorkers] = useState(1);
   const [logIsWorking, setLogIsWorking] = useState(true);
+  const [logImage, setLogImage] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   // State form Thu Chi
   const [editingTransId, setEditingTransId] = useState(null);
@@ -30,7 +34,7 @@ const ProjectDetail = () => {
   const calculateProgress = () => {
     if (project.isCompleted) return 100;
     const expectedDays = project.durationMonths * 30;
-    const workingDaysCount = project.dailyLogs.filter(l => l.isWorking).length;
+    const workingDaysCount = (project.dailyLogs || []).filter(l => l.isWorking).length;
     return Math.min(Math.round((workingDaysCount / expectedDays) * 100), 99);
   };
 
@@ -68,21 +72,41 @@ const ProjectDetail = () => {
     setLogWeather('Nắng');
     setLogWorkers(1);
     setLogIsWorking(true);
+    setLogImage(null);
   };
 
-  const handleAddLog = (e) => {
+  const handleAddLog = async (e) => {
     e.preventDefault();
-    const data = {
-      date: logDate, work: logWork, weather: logWeather,
-      workers: parseInt(logWorkers), isWorking: logIsWorking === 'true' || logIsWorking === true
-    };
-    if (editingLogId) {
-      updateDailyLog(project.id, editingLogId, data);
-      setEditingLogId(null);
-    } else {
-      addDailyLog(project.id, data);
+    setIsUploading(true);
+    
+    let imageUrl = null;
+    try {
+      if (logImage) {
+        const imageRef = ref(storage, `projects/${project.id}/logs/${Date.now()}_${logImage.name}`);
+        await uploadBytes(imageRef, logImage);
+        imageUrl = await getDownloadURL(imageRef);
+      }
+      
+      const data = {
+        date: logDate, work: logWork, weather: logWeather,
+        workers: parseInt(logWorkers), isWorking: logIsWorking === 'true' || logIsWorking === true,
+        imageUrl: imageUrl || (editingLogId ? (project.dailyLogs.find(l => l.id === editingLogId)?.imageUrl || null) : null)
+      };
+      
+      if (editingLogId) {
+        await updateDailyLog(project.id, editingLogId, data);
+        setEditingLogId(null);
+      } else {
+        await addDailyLog(project.id, data);
+      }
+      setLogWork('');
+      setLogImage(null);
+    } catch (error) {
+      console.error("Lỗi upload ảnh:", error);
+      alert("Có lỗi xảy ra khi tải ảnh lên.");
+    } finally {
+      setIsUploading(false);
     }
-    setLogWork('');
   };
 
   const startEditTrans = (t) => {
@@ -117,8 +141,8 @@ const ProjectDetail = () => {
     setTransNote('');
   };
 
-  const totalIn = project.transactions.filter(t => t.type === 'IN').reduce((sum, t) => sum + t.amount, 0);
-  const totalOut = project.transactions.filter(t => t.type === 'OUT').reduce((sum, t) => sum + t.amount, 0);
+  const totalIn = (project.transactions || []).filter(t => t.type === 'IN').reduce((sum, t) => sum + t.amount, 0);
+  const totalOut = (project.transactions || []).filter(t => t.type === 'OUT').reduce((sum, t) => sum + t.amount, 0);
 
   return (
     <div className="page-container animate-fade-in">
@@ -209,8 +233,27 @@ const ProjectDetail = () => {
                   <label className="input-label">Công việc thực hiện</label>
                   <textarea required className="input-field" rows="3" value={logWork} onChange={e=>setLogWork(e.target.value)} placeholder="Mô tả công việc..."></textarea>
                 </div>
+                <div className="input-group">
+                  <label className="input-label">Hình ảnh thi công (Không bắt buộc)</label>
+                  <div className="flex items-center gap-2">
+                    <label className="btn btn-outline flex-1 flex items-center justify-center gap-2 cursor-pointer">
+                      <Camera size={20} />
+                      {logImage ? 'Đã chọn 1 ảnh' : 'Chụp/Tải ảnh lên'}
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        capture="environment" 
+                        className="hidden" 
+                        onChange={e => setLogImage(e.target.files[0])} 
+                      />
+                    </label>
+                  </div>
+                  {logImage && <div className="text-sm text-success mt-1">✓ {logImage.name}</div>}
+                </div>
                 <div className="flex gap-2">
-                  <button type="submit" className="btn btn-primary w-full justify-center">{editingLogId ? 'Lưu chỉnh sửa' : 'Thêm mới'}</button>
+                  <button type="submit" disabled={isUploading} className="btn btn-primary w-full justify-center">
+                    {isUploading ? 'Đang lưu...' : (editingLogId ? 'Lưu chỉnh sửa' : 'Thêm mới')}
+                  </button>
                   {editingLogId && <button type="button" className="btn btn-outline" onClick={cancelEditLog}>Hủy</button>}
                 </div>
               </form>
@@ -232,13 +275,22 @@ const ProjectDetail = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {project.dailyLogs.sort((a,b) => new Date(b.date) - new Date(a.date)).map(log => (
+                    {[...(project.dailyLogs || [])].sort((a,b) => new Date(b.date) - new Date(a.date)).map(log => (
                       <tr key={log.id} style={{ background: editingLogId === log.id ? 'var(--bg-secondary)' : 'transparent' }}>
                         <td>{log.date}</td>
                         <td>{log.weather}</td>
                         <td>{log.workers} người</td>
                         <td>{log.isWorking ? <span className="text-success font-bold">Có làm</span> : <span className="text-danger font-bold">Nghỉ</span>}</td>
-                        <td>{log.work}</td>
+                        <td>
+                          {log.work}
+                          {log.imageUrl && (
+                            <div className="mt-2">
+                              <a href={log.imageUrl} target="_blank" rel="noopener noreferrer" className="text-primary text-sm flex items-center gap-1 hover:underline">
+                                <Camera size={14} /> Xem ảnh đính kèm
+                              </a>
+                            </div>
+                          )}
+                        </td>
                         <td className="text-right">
                           <div className="flex gap-2 justify-end">
                             <button onClick={() => startEditLog(log)} className="icon-btn text-info" title="Sửa"><Edit size={16} /></button>
@@ -247,7 +299,7 @@ const ProjectDetail = () => {
                         </td>
                       </tr>
                     ))}
-                    {project.dailyLogs.length === 0 && (
+                    {(project.dailyLogs || []).length === 0 && (
                       <tr><td colSpan="6" className="text-center text-secondary py-4">Chưa có nhật ký nào.</td></tr>
                     )}
                   </tbody>
@@ -315,7 +367,7 @@ const ProjectDetail = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {project.transactions.sort((a,b) => new Date(b.date) - new Date(a.date)).map(t => (
+                    {[...(project.transactions || [])].sort((a,b) => new Date(b.date) - new Date(a.date)).map(t => (
                       <tr key={t.id} style={{ background: editingTransId === t.id ? 'var(--bg-secondary)' : 'transparent' }}>
                         <td>{t.date}</td>
                         <td>
@@ -333,7 +385,7 @@ const ProjectDetail = () => {
                         </td>
                       </tr>
                     ))}
-                    {project.transactions.length === 0 && (
+                    {(project.transactions || []).length === 0 && (
                       <tr><td colSpan="5" className="text-center text-secondary py-4">Chưa có giao dịch nào.</td></tr>
                     )}
                   </tbody>

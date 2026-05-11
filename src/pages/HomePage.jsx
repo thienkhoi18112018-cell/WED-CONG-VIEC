@@ -1,12 +1,52 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, CheckCircle, MapPin, Phone, Mail } from 'lucide-react';
+import { ArrowRight, CheckCircle, MapPin, Phone, Mail, Edit, Trash2 } from 'lucide-react';
 import ChatWidget from '../components/ChatWidget';
 import { useAppContext } from '../context/AppContext';
 import './HomePage.css';
 
 const HomePage = () => {
-  const { pastProjects } = useAppContext();
+  const { pastProjects, isAuthenticated, role, addPastProject, updatePastProject, removePastProject } = useAppContext();
+  
+  const [editingProject, setEditingProject] = useState(null);
+  const [isAdding, setIsAdding] = useState(false);
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const data = {
+      name: formData.get('name'),
+      year: formData.get('year'),
+      description: formData.get('description'),
+      image: formData.get('image'),
+    };
+    if (isAdding) {
+      await addPastProject(data);
+      setIsAdding(false);
+    } else {
+      await updatePastProject(editingProject.id, data);
+      setEditingProject(null);
+    }
+  };
+
+  const AdminForm = () => {
+    const proj = isAdding ? {} : editingProject;
+    return (
+      <div className="card mb-6 animate-fade-in text-left" style={{ border: '2px solid var(--accent-primary)', maxWidth: '600px', margin: '0 auto 2rem' }}>
+        <h3 className="font-bold mb-4">{isAdding ? 'Thêm Dự án mới' : 'Chỉnh sửa Dự án'}</h3>
+        <form onSubmit={handleSave} className="grid gap-4">
+          <input required name="name" defaultValue={proj?.name} placeholder="Tên dự án" className="form-input" style={{ width: '100%', padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }} />
+          <input required name="year" defaultValue={proj?.year} placeholder="Năm thực hiện (VD: 2023)" className="form-input" style={{ width: '100%', padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }} />
+          <input required name="image" defaultValue={proj?.image} placeholder="Link ảnh (VD: https://...)" className="form-input" style={{ width: '100%', padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }} />
+          <textarea required name="description" defaultValue={proj?.description} placeholder="Mô tả dự án" className="form-input" rows="3" style={{ width: '100%', padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}></textarea>
+          <div className="flex gap-2">
+            <button type="submit" className="btn btn-primary">Lưu</button>
+            <button type="button" className="btn" style={{ backgroundColor: '#ccc', color: '#000' }} onClick={() => { setIsAdding(false); setEditingProject(null); }}>Hủy</button>
+          </div>
+        </form>
+      </div>
+    );
+  };
 
   return (
     <div className="homepage-container">
@@ -111,15 +151,38 @@ const HomePage = () => {
               Một số dự án tiêu biểu mà HDCONS đã tự hào đồng hành cùng quý khách hàng.
             </p>
           </div>
+
+          {isAuthenticated && role === 'ADMIN' && (
+            <div className="mb-6 text-center">
+              {!isAdding && !editingProject && (
+                <button className="btn btn-primary mb-4" onClick={() => setIsAdding(true)}>
+                  + Thêm dự án tiêu biểu
+                </button>
+              )}
+              {(isAdding || editingProject) && <AdminForm />}
+            </div>
+          )}
+
           <div className="grid md:grid-cols-3 gap-6">
             {pastProjects.map(project => (
-              <div key={project.id} className="card p-0" style={{ overflow: 'hidden' }}>
+              <div key={project.id} className="card p-0" style={{ overflow: 'hidden', position: 'relative' }}>
                 <img src={project.image} alt={project.name} style={{ width: '100%', height: '200px', objectFit: 'cover' }} />
                 <div style={{ padding: '1.5rem' }}>
                   <span className="badge badge-info mb-2">Năm {project.year}</span>
                   <h3 className="text-lg font-bold mb-2">{project.name}</h3>
                   <p style={{ color: 'var(--text-secondary)' }}>{project.description}</p>
                 </div>
+
+                {isAuthenticated && role === 'ADMIN' && (
+                  <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '8px', background: 'rgba(255,255,255,0.9)', padding: '4px', borderRadius: '8px' }}>
+                    <button onClick={() => setEditingProject(project)} style={{ padding: '4px', color: '#3b82f6' }} title="Sửa">
+                      <Edit size={20} />
+                    </button>
+                    <button onClick={() => { if(window.confirm('Bạn có chắc muốn xóa dự án này?')) removePastProject(project.id) }} style={{ padding: '4px', color: '#ef4444' }} title="Xóa">
+                      <Trash2 size={20} />
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>

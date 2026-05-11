@@ -6,7 +6,7 @@ import { ArrowLeft, CheckCircle, Edit, Trash2 } from 'lucide-react';
 const DesignDetail = () => {
   const { id } = useParams();
   const { designs, updateDesign, addDesignTransaction, updateDesignTransaction, removeDesignTransaction } = useAppContext();
-  const design = designs.find(d => d.id === parseInt(id));
+  const design = designs.find(d => d?.id?.toString() === id?.toString());
 
   const [editingTransId, setEditingTransId] = useState(null);
   const [transDate, setTransDate] = useState(new Date().toISOString().slice(0,10));
@@ -54,8 +54,8 @@ const DesignDetail = () => {
     setTransNote('');
   };
 
-  const totalIn = design.transactions.filter(t => t.type === 'IN').reduce((sum, t) => sum + t.amount, 0);
-  const totalOut = design.transactions.filter(t => t.type === 'OUT').reduce((sum, t) => sum + t.amount, 0);
+  const totalIn = (design.transactions || []).filter(t => t.type === 'IN').reduce((sum, t) => sum + t.amount, 0);
+  const totalOut = (design.transactions || []).filter(t => t.type === 'OUT').reduce((sum, t) => sum + t.amount, 0);
 
   return (
     <div className="page-container animate-fade-in">
@@ -148,7 +148,7 @@ const DesignDetail = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {design.transactions.sort((a,b) => new Date(b.date) - new Date(a.date)).map(t => (
+                  {[...(design.transactions || [])].sort((a,b) => new Date(b.date) - new Date(a.date)).map(t => (
                     <tr key={t.id} style={{ background: editingTransId === t.id ? 'var(--bg-secondary)' : 'transparent' }}>
                       <td>{t.date}</td>
                       <td>
@@ -166,7 +166,7 @@ const DesignDetail = () => {
                       </td>
                     </tr>
                   ))}
-                  {design.transactions.length === 0 && (
+                  {(design.transactions || []).length === 0 && (
                     <tr><td colSpan="5" className="text-center text-secondary py-4">Chưa có giao dịch nào.</td></tr>
                   )}
                 </tbody>

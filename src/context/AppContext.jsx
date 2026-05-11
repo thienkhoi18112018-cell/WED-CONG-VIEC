@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 
 const AppContext = createContext();
 
@@ -47,9 +49,30 @@ export const AppProvider = ({ children }) => {
   const [role, setRole] = useState('ADMIN'); // ADMIN or EMPLOYEE
   const [theme, setTheme] = useState('light');
   
-  const [projects, setProjects] = useState(initialProjects);
-  const [designs, setDesigns] = useState(initialDesigns);
-  const [pastProjects, setPastProjects] = useState(initialPastProjects);
+  const [projects, setProjects] = useState([]);
+  const [designs, setDesigns] = useState([]);
+  const [pastProjects, setPastProjects] = useState([]);
+
+
+
+  // Lắng nghe dữ liệu realtime từ Firebase
+  useEffect(() => {
+    const unsubProjects = onSnapshot(collection(db, 'projects'), (snapshot) => {
+      setProjects(snapshot.docs.map(doc => doc.data()));
+    });
+    const unsubDesigns = onSnapshot(collection(db, 'designs'), (snapshot) => {
+      setDesigns(snapshot.docs.map(doc => doc.data()));
+    });
+    const unsubPastProjects = onSnapshot(collection(db, 'pastProjects'), (snapshot) => {
+      setPastProjects(snapshot.docs.map(doc => doc.data()));
+    });
+
+    return () => {
+      unsubProjects();
+      unsubDesigns();
+      unsubPastProjects();
+    };
+  }, []);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme') || 'light';
@@ -90,102 +113,107 @@ export const AppProvider = ({ children }) => {
   };
 
   // --- QUẢN LÝ DỰ ÁN ---
-  const addProject = (project) => {
-    setProjects([...projects, { ...project, id: Date.now(), dailyLogs: [], transactions: [], isCompleted: false }]);
+  const addProject = async (project) => {
+    const newId = Date.now().toString();
+    await setDoc(doc(db, 'projects', newId), { ...project, id: newId, dailyLogs: [], transactions: [], isCompleted: false });
   };
-  const updateProject = (id, updatedProject) => {
-    setProjects(projects.map(p => p.id === id ? { ...p, ...updatedProject } : p));
+  const updateProject = async (id, updatedProject) => {
+    await updateDoc(doc(db, 'projects', id.toString()), updatedProject);
   };
-  const removeProject = (id) => {
-    setProjects(projects.filter(p => p.id !== id));
+  const removeProject = async (id) => {
+    await deleteDoc(doc(db, 'projects', id.toString()));
   };
 
   // Logic Nhật ký
-  const addDailyLog = (projectId, log) => {
-    setProjects(projects.map(p => {
-      if (p.id === projectId) {
-        return { ...p, dailyLogs: [...p.dailyLogs, { ...log, id: Date.now() }] };
-      }
-      return p;
-    }));
+  const addDailyLog = async (projectId, log) => {
+    const project = projects.find(p => p.id.toString() === projectId.toString());
+    if (project) {
+      const updatedLogs = [...(project.dailyLogs || []), { ...log, id: Date.now().toString() }];
+      await updateDoc(doc(db, 'projects', projectId.toString()), { dailyLogs: updatedLogs });
+    }
   };
-  const updateDailyLog = (projectId, logId, updatedLog) => {
-    setProjects(projects.map(p => {
-      if (p.id === projectId) {
-        return { ...p, dailyLogs: p.dailyLogs.map(l => l.id === logId ? { ...l, ...updatedLog } : l) };
-      }
-      return p;
-    }));
+  const updateDailyLog = async (projectId, logId, updatedLog) => {
+    const project = projects.find(p => p.id.toString() === projectId.toString());
+    if (project) {
+      const updatedLogs = project.dailyLogs.map(l => l.id.toString() === logId.toString() ? { ...l, ...updatedLog } : l);
+      await updateDoc(doc(db, 'projects', projectId.toString()), { dailyLogs: updatedLogs });
+    }
   };
-  const removeDailyLog = (projectId, logId) => {
-    setProjects(projects.map(p => {
-      if (p.id === projectId) {
-        return { ...p, dailyLogs: p.dailyLogs.filter(l => l.id !== logId) };
-      }
-      return p;
-    }));
+  const removeDailyLog = async (projectId, logId) => {
+    const project = projects.find(p => p.id.toString() === projectId.toString());
+    if (project) {
+      const updatedLogs = project.dailyLogs.filter(l => l.id.toString() !== logId.toString());
+      await updateDoc(doc(db, 'projects', projectId.toString()), { dailyLogs: updatedLogs });
+    }
   };
 
   // Logic Sổ quỹ Thi Công
-  const addTransaction = (projectId, transaction) => {
-    setProjects(projects.map(p => {
-      if (p.id === projectId) {
-        return { ...p, transactions: [...p.transactions, { ...transaction, id: Date.now() }] };
-      }
-      return p;
-    }));
+  const addTransaction = async (projectId, transaction) => {
+    const project = projects.find(p => p.id.toString() === projectId.toString());
+    if (project) {
+      const updatedTrans = [...(project.transactions || []), { ...transaction, id: Date.now().toString() }];
+      await updateDoc(doc(db, 'projects', projectId.toString()), { transactions: updatedTrans });
+    }
   };
-  const updateTransaction = (projectId, transactionId, updatedTransaction) => {
-    setProjects(projects.map(p => {
-      if (p.id === projectId) {
-        return { ...p, transactions: p.transactions.map(t => t.id === transactionId ? { ...t, ...updatedTransaction } : t) };
-      }
-      return p;
-    }));
+  const updateTransaction = async (projectId, transactionId, updatedTransaction) => {
+    const project = projects.find(p => p.id.toString() === projectId.toString());
+    if (project) {
+      const updatedTrans = project.transactions.map(t => t.id.toString() === transactionId.toString() ? { ...t, ...updatedTransaction } : t);
+      await updateDoc(doc(db, 'projects', projectId.toString()), { transactions: updatedTrans });
+    }
   };
-  const removeTransaction = (projectId, transactionId) => {
-    setProjects(projects.map(p => {
-      if (p.id === projectId) {
-        return { ...p, transactions: p.transactions.filter(t => t.id !== transactionId) };
-      }
-      return p;
-    }));
+  const removeTransaction = async (projectId, transactionId) => {
+    const project = projects.find(p => p.id.toString() === projectId.toString());
+    if (project) {
+      const updatedTrans = project.transactions.filter(t => t.id.toString() !== transactionId.toString());
+      await updateDoc(doc(db, 'projects', projectId.toString()), { transactions: updatedTrans });
+    }
   };
 
   // --- QUẢN LÝ THIẾT KẾ ---
-  const addDesign = (design) => {
-    setDesigns([...designs, { ...design, id: Date.now(), transactions: [], isCompleted: false }]);
+  const addDesign = async (design) => {
+    const newId = Date.now().toString();
+    await setDoc(doc(db, 'designs', newId), { ...design, id: newId, transactions: [], isCompleted: false });
   };
-  const updateDesign = (id, updatedDesign) => {
-    setDesigns(designs.map(d => d.id === id ? { ...d, ...updatedDesign } : d));
+  const updateDesign = async (id, updatedDesign) => {
+    await updateDoc(doc(db, 'designs', id.toString()), updatedDesign);
   };
-  const removeDesign = (id) => {
-    setDesigns(designs.filter(d => d.id !== id));
+  const removeDesign = async (id) => {
+    await deleteDoc(doc(db, 'designs', id.toString()));
   };
 
-  const addDesignTransaction = (designId, transaction) => {
-    setDesigns(designs.map(d => {
-      if (d.id === designId) {
-        return { ...d, transactions: [...d.transactions, { ...transaction, id: Date.now() }] };
-      }
-      return d;
-    }));
+  const addDesignTransaction = async (designId, transaction) => {
+    const design = designs.find(d => d.id.toString() === designId.toString());
+    if (design) {
+      const updatedTrans = [...(design.transactions || []), { ...transaction, id: Date.now().toString() }];
+      await updateDoc(doc(db, 'designs', designId.toString()), { transactions: updatedTrans });
+    }
   };
-  const updateDesignTransaction = (designId, transactionId, updatedTransaction) => {
-    setDesigns(designs.map(d => {
-      if (d.id === designId) {
-        return { ...d, transactions: d.transactions.map(t => t.id === transactionId ? { ...t, ...updatedTransaction } : t) };
-      }
-      return d;
-    }));
+  const updateDesignTransaction = async (designId, transactionId, updatedTransaction) => {
+    const design = designs.find(d => d.id.toString() === designId.toString());
+    if (design) {
+      const updatedTrans = design.transactions.map(t => t.id.toString() === transactionId.toString() ? { ...t, ...updatedTransaction } : t);
+      await updateDoc(doc(db, 'designs', designId.toString()), { transactions: updatedTrans });
+    }
   };
-  const removeDesignTransaction = (designId, transactionId) => {
-    setDesigns(designs.map(d => {
-      if (d.id === designId) {
-        return { ...d, transactions: d.transactions.filter(t => t.id !== transactionId) };
-      }
-      return d;
-    }));
+  const removeDesignTransaction = async (designId, transactionId) => {
+    const design = designs.find(d => d.id.toString() === designId.toString());
+    if (design) {
+      const updatedTrans = design.transactions.filter(t => t.id.toString() !== transactionId.toString());
+      await updateDoc(doc(db, 'designs', designId.toString()), { transactions: updatedTrans });
+    }
+  };
+
+  // --- QUẢN LÝ DỰ ÁN ĐÃ THỰC HIỆN ---
+  const addPastProject = async (project) => {
+    const newId = Date.now().toString();
+    await setDoc(doc(db, 'pastProjects', newId), { ...project, id: newId });
+  };
+  const updatePastProject = async (id, updatedProject) => {
+    await updateDoc(doc(db, 'pastProjects', id.toString()), updatedProject);
+  };
+  const removePastProject = async (id) => {
+    await deleteDoc(doc(db, 'pastProjects', id.toString()));
   };
 
   return (
@@ -197,7 +225,7 @@ export const AppProvider = ({ children }) => {
       addDailyLog, updateDailyLog, removeDailyLog, addTransaction, updateTransaction, removeTransaction,
       designs, addDesign, updateDesign, removeDesign,
       addDesignTransaction, updateDesignTransaction, removeDesignTransaction,
-      pastProjects
+      pastProjects, addPastProject, updatePastProject, removePastProject
     }}>
       {children}
     </AppContext.Provider>
