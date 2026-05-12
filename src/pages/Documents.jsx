@@ -50,7 +50,7 @@ const Documents = () => {
         await deleteDoc(doc(db, 'documents', docId));
         // Optional: Delete from storage
         const fileRef = ref(storage, fileUrl);
-        await deleteObject(fileRef).catch(e => console.log('File not found in storage'));
+        await deleteObject(fileRef).catch(() => console.log('File not found in storage'));
       } catch (error) {
         console.error("Lỗi xóa:", error);
       }

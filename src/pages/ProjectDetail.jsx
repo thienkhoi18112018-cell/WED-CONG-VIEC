@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
-import { ArrowLeft, CheckCircle, Edit, Trash2, Camera, Upload } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Edit, Trash2, Camera } from 'lucide-react';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../firebase';
 
