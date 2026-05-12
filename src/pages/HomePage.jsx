@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, CheckCircle, MapPin, Phone, Mail, Edit, Trash2 } from 'lucide-react';
+import { motion } from 'framer-motion';
 import ChatWidget from '../components/ChatWidget';
 import { useAppContext } from '../context/AppContext';
 import './HomePage.css';
@@ -32,7 +33,10 @@ const HomePage = () => {
   const AdminForm = () => {
     const proj = isAdding ? {} : editingProject;
     return (
-      <div className="card mb-6 animate-fade-in text-left" style={{ border: '2px solid var(--accent-primary)', maxWidth: '600px', margin: '0 auto 2rem' }}>
+      <motion.div 
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="card mb-6 text-left" style={{ border: '2px solid var(--accent-primary)', maxWidth: '600px', margin: '0 auto 2rem' }}>
         <h3 className="font-bold mb-4">{isAdding ? 'Thêm Dự án mới' : 'Chỉnh sửa Dự án'}</h3>
         <form onSubmit={handleSave} className="grid gap-4">
           <input required name="name" defaultValue={proj?.name} placeholder="Tên dự án" className="form-input" style={{ width: '100%', padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }} />
@@ -44,8 +48,13 @@ const HomePage = () => {
             <button type="button" className="btn" style={{ backgroundColor: '#ccc', color: '#000' }} onClick={() => { setIsAdding(false); setEditingProject(null); }}>Hủy</button>
           </div>
         </form>
-      </div>
+      </motion.div>
     );
+  };
+
+  const fadeIn = {
+    hidden: { opacity: 0, y: 30 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.6 } }
   };
 
   return (
@@ -68,14 +77,28 @@ const HomePage = () => {
 
       {/* Hero Section */}
       <section className="hero-section">
-        <div className="container hero-content animate-fade-in">
-          <h1 className="hero-title">Kiến Tạo Không Gian,<br/> Xây Dựng Tương Lai</h1>
-          <p className="hero-subtitle">CÔNG TY TNHH TƯ VẤN XÂY DỰNG HỘI AN HDCONS tự hào mang đến những giải pháp thiết kế và thi công đẳng cấp, kiến tạo nên những công trình bền vững với thời gian.</p>
-          <div className="hero-actions">
+        <div className="container hero-content">
+          <motion.h1 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8 }}
+            className="hero-title">Kiến Tạo Không Gian,<br/> Xây Dựng Tương Lai
+          </motion.h1>
+          <motion.p 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.3, duration: 0.8 }}
+            className="hero-subtitle">CÔNG TY TNHH TƯ VẤN XÂY DỰNG HỘI AN HDCONS tự hào mang đến những giải pháp thiết kế và thi công đẳng cấp, kiến tạo nên những công trình bền vững với thời gian.
+          </motion.p>
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.6 }}
+            className="hero-actions">
             <a href="#contact" className="btn btn-primary" style={{ padding: '1rem 2rem', fontSize: '1.125rem' }}>
               Nhận tư vấn miễn phí <ArrowRight size={20} />
             </a>
-          </div>
+          </motion.div>
         </div>
         <div className="hero-overlay"></div>
       </section>
@@ -84,7 +107,7 @@ const HomePage = () => {
       <section id="about" className="section-padding bg-secondary">
         <div className="container">
           <div className="grid md:grid-cols-2 gap-6 items-center">
-            <div>
+            <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeIn}>
               <h2 className="section-title">Tại sao chọn HDCONS?</h2>
               <p className="section-text">
                 Với hơn 10 năm kinh nghiệm trong lĩnh vực xây dựng và thiết kế kiến trúc, HDCONS luôn đặt chữ TÍN lên hàng đầu. Chúng tôi cam kết mang lại chất lượng hoàn hảo nhất cho từng chi tiết nhỏ.
@@ -95,24 +118,25 @@ const HomePage = () => {
                 <li><CheckCircle className="text-success" /> Đúng tiến độ, đảm bảo chất lượng</li>
                 <li><CheckCircle className="text-success" /> Bảo hành công trình dài hạn</li>
               </ul>
-            </div>
+            </motion.div>
             <div className="stats-grid">
-              <div className="stat-card card">
-                <h3>500+</h3>
-                <p>Dự án hoàn thành</p>
-              </div>
-              <div className="stat-card card">
-                <h3>10+</h3>
-                <p>Năm kinh nghiệm</p>
-              </div>
-              <div className="stat-card card">
-                <h3>98%</h3>
-                <p>Khách hàng hài lòng</p>
-              </div>
-              <div className="stat-card card">
-                <h3>50+</h3>
-                <p>Chuyên gia</p>
-              </div>
+              {[
+                { label: 'Dự án hoàn thành', value: '500+' },
+                { label: 'Năm kinh nghiệm', value: '10+' },
+                { label: 'Khách hàng hài lòng', value: '98%' },
+                { label: 'Chuyên gia', value: '50+' },
+              ].map((stat, idx) => (
+                <motion.div 
+                  key={idx}
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  whileInView={{ opacity: 1, scale: 1 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: idx * 0.1, duration: 0.4 }}
+                  className="stat-card card">
+                  <h3>{stat.value}</h3>
+                  <p>{stat.label}</p>
+                </motion.div>
+              ))}
             </div>
           </div>
         </div>
@@ -121,23 +145,28 @@ const HomePage = () => {
       {/* Services Section */}
       <section id="services" className="section-padding text-center">
         <div className="container">
-          <h2 className="section-title" style={{ justifyContent: 'center' }}>Dịch vụ của chúng tôi</h2>
-          <p className="section-text mx-auto" style={{ maxWidth: '600px' }}>
+          <motion.h2 initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeIn} className="section-title" style={{ justifyContent: 'center' }}>Dịch vụ của chúng tôi</motion.h2>
+          <motion.p initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeIn} className="section-text mx-auto" style={{ maxWidth: '600px' }}>
             Chúng tôi cung cấp giải pháp toàn diện từ thiết kế ý tưởng đến thi công hoàn thiện, chìa khóa trao tay.
-          </p>
+          </motion.p>
           <div className="grid md:grid-cols-3 gap-6 mt-8">
-            <div className="card service-card">
-              <h3>Thiết kế Kiến trúc</h3>
-              <p>Sáng tạo không gian sống hiện đại, đẳng cấp và tối ưu công năng.</p>
-            </div>
-            <div className="card service-card">
-              <h3>Thi công Xây dựng</h3>
-              <p>Cam kết chất lượng vật tư, tiến độ nhanh chóng và an toàn tuyệt đối.</p>
-            </div>
-            <div className="card service-card">
-              <h3>Tư vấn & Giám sát</h3>
-              <p>Đồng hành cùng chủ đầu tư trong suốt quá trình triển khai dự án.</p>
-            </div>
+            {[
+              { title: 'Thiết kế Kiến trúc', desc: 'Sáng tạo không gian sống hiện đại, đẳng cấp và tối ưu công năng.' },
+              { title: 'Thi công Xây dựng', desc: 'Cam kết chất lượng vật tư, tiến độ nhanh chóng và an toàn tuyệt đối.' },
+              { title: 'Tư vấn & Giám sát', desc: 'Đồng hành cùng chủ đầu tư trong suốt quá trình triển khai dự án.' }
+            ].map((srv, idx) => (
+              <motion.div 
+                key={idx}
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                whileHover={{ y: -10 }}
+                transition={{ delay: idx * 0.2 }}
+                className="card service-card">
+                <h3>{srv.title}</h3>
+                <p>{srv.desc}</p>
+              </motion.div>
+            ))}
           </div>
         </div>
       </section>
@@ -146,10 +175,10 @@ const HomePage = () => {
       <section id="projects" className="section-padding bg-secondary">
         <div className="container">
           <div className="text-center mb-10">
-            <h2 className="section-title" style={{ justifyContent: 'center' }}>Dự án đã thực hiện qua các năm</h2>
-            <p className="section-text mx-auto" style={{ maxWidth: '600px' }}>
+            <motion.h2 initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeIn} className="section-title" style={{ justifyContent: 'center' }}>Dự án đã thực hiện qua các năm</motion.h2>
+            <motion.p initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeIn} className="section-text mx-auto" style={{ maxWidth: '600px' }}>
               Một số dự án tiêu biểu mà HDCONS đã tự hào đồng hành cùng quý khách hàng.
-            </p>
+            </motion.p>
           </div>
 
           {isAuthenticated && role === 'ADMIN' && (
@@ -164,9 +193,16 @@ const HomePage = () => {
           )}
 
           <div className="grid md:grid-cols-3 gap-6">
-            {pastProjects.map(project => (
-              <div key={project.id} className="card p-0" style={{ overflow: 'hidden', position: 'relative' }}>
-                <img src={project.image} alt={project.name} style={{ width: '100%', height: '200px', objectFit: 'cover' }} />
+            {pastProjects.map((project, idx) => (
+              <motion.div 
+                key={project.id} 
+                initial={{ opacity: 0, scale: 0.95 }}
+                whileInView={{ opacity: 1, scale: 1 }}
+                viewport={{ once: true }}
+                transition={{ delay: (idx % 3) * 0.1 }}
+                whileHover={{ y: -5 }}
+                className="card p-0" style={{ overflow: 'hidden', position: 'relative' }}>
+                <img src={project.image} alt={project.name} loading="lazy" style={{ width: '100%', height: '200px', objectFit: 'cover' }} />
                 <div style={{ padding: '1.5rem' }}>
                   <span className="badge badge-info mb-2">Năm {project.year}</span>
                   <h3 className="text-lg font-bold mb-2">{project.name}</h3>
@@ -183,7 +219,7 @@ const HomePage = () => {
                     </button>
                   </div>
                 )}
-              </div>
+              </motion.div>
             ))}
           </div>
         </div>

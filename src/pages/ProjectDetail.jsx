@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
-import { ArrowLeft, CheckCircle, Edit, Trash2, Camera } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Edit, Trash2, Camera, Download } from 'lucide-react';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../firebase';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 const ProjectDetail = () => {
   const { id } = useParams();
@@ -28,6 +30,9 @@ const ProjectDetail = () => {
   const [transType, setTransType] = useState('IN');
   const [transAmount, setTransAmount] = useState('');
   const [transNote, setTransNote] = useState('');
+
+  // Refs cho xuất PDF
+  const reportRef = useRef();
 
   if (!project) return <div className="page-container">Dự án không tồn tại!</div>;
 
@@ -54,6 +59,40 @@ const ProjectDetail = () => {
     if(window.confirm('Xác nhận công trình đã hoàn thành 100%?')) {
       updateProject(project.id, { isCompleted: true, progress: 100 });
     }
+  };
+
+  const [isExporting, setIsExporting] = useState(false);
+
+  const exportPDF = async () => {
+    const input = reportRef.current;
+    if (!input) return;
+    
+    setIsExporting(true);
+    
+    // Đợi React render lại phần bảng báo cáo
+    setTimeout(async () => {
+      const originalStyle = input.style.cssText;
+      input.style.backgroundColor = '#ffffff';
+      input.style.padding = '20px';
+      input.style.color = '#000000';
+      
+      try {
+        const canvas = await html2canvas(input, { scale: 2 });
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+        
+        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+        pdf.save(`Bao_cao_${project.name}_${activeTab}.pdf`);
+      } catch (err) {
+        console.error('Lỗi khi xuất PDF:', err);
+        alert('Không thể xuất PDF, vui lòng thử lại.');
+      } finally {
+        input.style.cssText = originalStyle;
+        setIsExporting(false);
+      }
+    }, 100);
   };
 
   const startEditLog = (log) => {
@@ -146,15 +185,18 @@ const ProjectDetail = () => {
 
   return (
     <div className="page-container animate-fade-in">
-      <div className="mb-4">
-        <Link to="/dashboard/construction" className="btn btn-outline" style={{ display: 'inline-flex' }}>
+      <div className="mb-4 flex justify-between items-center">
+        <Link to="/dashboard/construction" className="btn btn-outline">
           <ArrowLeft size={16} /> Quay lại
         </Link>
+        <button onClick={exportPDF} className="btn btn-primary">
+          <Download size={16} /> Xuất PDF
+        </button>
       </div>
 
-      <div className="card mb-6">
+      <div className="card mb-6" ref={reportRef}>
         <div className="flex justify-between items-start">
-          <div>
+          <div style={{ width: '100%' }}>
             <h1 className="text-2xl font-bold mb-2">{project.name}</h1>
             <p className="text-secondary mb-2">Phụ trách: {project.manager} | Bắt đầu: {project.startDate} | Dự kiến: {project.durationMonths} tháng</p>
             <p className="text-secondary mb-4">Tổng giá trị hợp đồng: <strong>{project.totalValue?.toLocaleString('vi-VN')} VNĐ</strong></p>
@@ -170,8 +212,79 @@ const ProjectDetail = () => {
             {!project.isCompleted && (
                <p className="text-sm text-secondary italic">*Tiến độ được tính bằng Số ngày có làm việc / Tổng ngày dự kiến</p>
             )}
+
+            {/* Bảng dữ liệu dành cho xuất PDF (chỉ hiển thị khi đang xuất) */}
+            {isExporting && (
+            <div className="mt-6">
+              <h3 className="font-bold mb-2 border-b pb-2">
+                {activeTab === 'LOGS' ? 'BÁO CÁO NHẬT KÝ THI CÔNG' : 'BÁO CÁO TÀI CHÍNH THU CHI'}
+              </h3>
+              
+              {activeTab === 'LOGS' && (
+                <div className="table-container">
+                  <table className="table" style={{ border: '1px solid #ddd' }}>
+                    <thead style={{ background: '#f5f5f5' }}>
+                      <tr>
+                        <th>Ngày</th>
+                        <th>Thời tiết</th>
+                        <th>Nhân lực</th>
+                        <th>Trạng thái</th>
+                        <th>Công việc</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...(project.dailyLogs || [])].sort((a,b) => new Date(b.date) - new Date(a.date)).map(log => (
+                        <tr key={log.id}>
+                          <td>{log.date}</td>
+                          <td>{log.weather}</td>
+                          <td>{log.workers} người</td>
+                          <td>{log.isWorking ? 'Có làm' : 'Nghỉ'}</td>
+                          <td>{log.work}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {activeTab === 'FINANCE' && (
+                <div className="table-container">
+                  <table className="table" style={{ border: '1px solid #ddd' }}>
+                    <thead style={{ background: '#f5f5f5' }}>
+                      <tr>
+                        <th>Ngày</th>
+                        <th>Loại</th>
+                        <th>Nội dung</th>
+                        <th className="text-right">Số tiền (VNĐ)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td colSpan="3" className="font-bold text-right">Tổng thu:</td>
+                        <td className="text-right font-bold text-success">+{totalIn.toLocaleString('vi-VN')}</td>
+                      </tr>
+                      <tr>
+                        <td colSpan="3" className="font-bold text-right">Tổng chi:</td>
+                        <td className="text-right font-bold text-danger">-{totalOut.toLocaleString('vi-VN')}</td>
+                      </tr>
+                      {[...(project.transactions || [])].sort((a,b) => new Date(b.date) - new Date(a.date)).map(t => (
+                        <tr key={t.id}>
+                          <td>{t.date}</td>
+                          <td>{t.type === 'IN' ? 'Tiền Vào' : 'Tiền Ra'}</td>
+                          <td>{t.note}</td>
+                          <td className="text-right">{t.amount.toLocaleString('vi-VN')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            )}
+            {/* End phần xuất báo cáo */}
+
           </div>
-          <div>
+          <div data-html2canvas-ignore>
             {!project.isCompleted ? (
               <button className="btn btn-success" style={{ background: 'var(--success)', color: 'white' }} onClick={handleComplete}>
                 <CheckCircle size={16} /> Chốt Hoàn thành
