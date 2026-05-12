@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, CheckCircle, MapPin, Phone, Mail, Edit, Trash2 } from 'lucide-react';
+import { ArrowRight, CheckCircle, MapPin, Phone, Mail, Edit, Trash2, Upload } from 'lucide-react';
 import { motion } from 'framer-motion';
 import ChatWidget from '../components/ChatWidget';
 import { useAppContext } from '../context/AppContext';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { storage } from '../firebase';
 import './HomePage.css';
 
 const HomePage = () => {
@@ -11,22 +13,44 @@ const HomePage = () => {
   
   const [editingProject, setEditingProject] = useState(null);
   const [isAdding, setIsAdding] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
   const handleSave = async (e) => {
     e.preventDefault();
+    setIsUploading(true);
     const formData = new FormData(e.target);
-    const data = {
-      name: formData.get('name'),
-      year: formData.get('year'),
-      description: formData.get('description'),
-      image: formData.get('image'),
-    };
-    if (isAdding) {
-      await addPastProject(data);
-      setIsAdding(false);
-    } else {
-      await updatePastProject(editingProject.id, data);
-      setEditingProject(null);
+    const imageFile = formData.get('imageFile');
+    
+    let imageUrl = editingProject?.image || '';
+    
+    try {
+      if (imageFile && imageFile.size > 0) {
+        const imageRef = ref(storage, `pastProjects/${Date.now()}_${imageFile.name}`);
+        await uploadBytes(imageRef, imageFile);
+        imageUrl = await getDownloadURL(imageRef);
+      } else if (formData.get('imageUrl')) {
+        imageUrl = formData.get('imageUrl');
+      }
+
+      const data = {
+        name: formData.get('name'),
+        year: formData.get('year'),
+        description: formData.get('description'),
+        image: imageUrl,
+      };
+      
+      if (isAdding) {
+        await addPastProject(data);
+        setIsAdding(false);
+      } else {
+        await updatePastProject(editingProject.id, data);
+        setEditingProject(null);
+      }
+    } catch (err) {
+      console.error("Lỗi khi upload ảnh:", err);
+      alert("Lỗi tải ảnh lên.");
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -41,10 +65,17 @@ const HomePage = () => {
         <form onSubmit={handleSave} className="grid gap-4">
           <input required name="name" defaultValue={proj?.name} placeholder="Tên dự án" className="form-input" style={{ width: '100%', padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }} />
           <input required name="year" defaultValue={proj?.year} placeholder="Năm thực hiện (VD: 2023)" className="form-input" style={{ width: '100%', padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }} />
-          <input required name="image" defaultValue={proj?.image} placeholder="Link ảnh (VD: https://...)" className="form-input" style={{ width: '100%', padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }} />
+          
+          <div className="flex flex-col gap-2 p-3 border rounded" style={{ borderColor: '#ccc' }}>
+            <label className="text-sm font-bold text-secondary">Hình ảnh dự án</label>
+            <input type="file" name="imageFile" accept="image/*" className="form-input" style={{ width: '100%', padding: '0.5rem', border: '1px dashed #ccc', borderRadius: '4px' }} />
+            <div className="text-center text-sm text-secondary">hoặc nhập link ảnh có sẵn bên dưới</div>
+            <input name="imageUrl" defaultValue={proj?.image} placeholder="Link ảnh (VD: https://...)" className="form-input" style={{ width: '100%', padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }} />
+          </div>
+
           <textarea required name="description" defaultValue={proj?.description} placeholder="Mô tả dự án" className="form-input" rows="3" style={{ width: '100%', padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}></textarea>
           <div className="flex gap-2">
-            <button type="submit" className="btn btn-primary">Lưu</button>
+            <button type="submit" disabled={isUploading} className="btn btn-primary">{isUploading ? 'Đang lưu...' : 'Lưu'}</button>
             <button type="button" className="btn" style={{ backgroundColor: '#ccc', color: '#000' }} onClick={() => { setIsAdding(false); setEditingProject(null); }}>Hủy</button>
           </div>
         </form>
