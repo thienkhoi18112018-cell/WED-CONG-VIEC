@@ -121,9 +121,25 @@ const ProjectDetail = () => {
     let imageUrl = null;
     try {
       if (logImage) {
-        const imageRef = ref(storage, `projects/${project.id}/logs/${Date.now()}_${logImage.name}`);
-        await uploadBytes(imageRef, logImage);
-        imageUrl = await getDownloadURL(imageRef);
+        // Sử dụng ImgBB để tải ảnh miễn phí không cần thẻ
+        const formData = new FormData();
+        formData.append('image', logImage);
+        
+        // Thay khóa API của bạn vào đây
+        const IMGBB_API_KEY = 'b7fba4419a881b35dccfe77f6139d45a'; 
+        
+        const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+          method: 'POST',
+          body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          imageUrl = result.data.url;
+        } else {
+          throw new Error(result.error?.message || 'Lỗi tải ảnh lên ImgBB');
+        }
       }
       
       const data = {

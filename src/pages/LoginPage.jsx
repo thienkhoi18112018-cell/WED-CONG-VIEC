@@ -1,28 +1,31 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAppContext } from '../context/AppContext';
 import { HardHat } from 'lucide-react';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '../firebase';
 
 const LoginPage = () => {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const { login } = useAppContext();
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
 
-    // Kiểm tra thông tin đăng nhập
-    if (username === 'hdcons' && password === 'hdcons') {
-      login('ADMIN');
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      // Khi đăng nhập thành công, AppContext sẽ tự động cập nhật isAuthenticated = true
+      // và chuyển hướng sang dashboard (nếu đã có logic ở MainLayout hoặc App)
       navigate('/dashboard');
-    } else if (username === 'nhanvien' && password === '123456') {
-      login('EMPLOYEE');
-      navigate('/dashboard');
-    } else {
-      setError('Tài khoản hoặc mật khẩu không chính xác!');
+    } catch (err) {
+      console.error(err);
+      setError('Đăng nhập thất bại. Vui lòng kiểm tra lại Email hoặc Mật khẩu.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -45,13 +48,13 @@ const LoginPage = () => {
 
         <form onSubmit={handleLogin} className="flex flex-col gap-4">
           <div className="input-group">
-            <label className="input-label">Tên đăng nhập</label>
+            <label className="input-label">Email đăng nhập</label>
             <input 
-              type="text" 
+              type="email" 
               className="input-field" 
-              placeholder="VD: hdcons" 
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              placeholder="VD: hdcons92@gmail.com" 
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               required 
             />
           </div>
@@ -67,8 +70,8 @@ const LoginPage = () => {
             />
           </div>
           
-          <button type="submit" className="btn btn-primary" style={{ marginTop: '1rem', padding: '0.75rem' }}>
-            Đăng nhập
+          <button type="submit" disabled={loading} className="btn btn-primary" style={{ marginTop: '1rem', padding: '0.75rem', display: 'flex', justifyContent: 'center' }}>
+            {loading ? 'Đang xác thực...' : 'Đăng nhập'}
           </button>
         </form>
         

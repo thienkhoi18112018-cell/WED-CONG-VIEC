@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { db, auth } from '../firebase';
 
 const AppContext = createContext();
 
@@ -20,12 +21,19 @@ export const AppProvider = ({ children }) => {
   useEffect(() => {
     const unsubProjects = onSnapshot(collection(db, 'projects'), (snapshot) => {
       setProjects(snapshot.docs.map(doc => doc.data()));
+    }, (error) => {
+      console.error("Lỗi tải dữ liệu Projects từ Firebase: ", error);
+      alert("Không thể tải dữ liệu Dự án từ Firebase. Có thể do Firebase Rules chặn quyền truy cập.");
     });
     const unsubDesigns = onSnapshot(collection(db, 'designs'), (snapshot) => {
       setDesigns(snapshot.docs.map(doc => doc.data()));
+    }, (error) => {
+      console.error("Lỗi tải dữ liệu Designs từ Firebase: ", error);
     });
     const unsubPastProjects = onSnapshot(collection(db, 'pastProjects'), (snapshot) => {
       setPastProjects(snapshot.docs.map(doc => doc.data()));
+    }, (error) => {
+      console.error("Lỗi tải dữ liệu PastProjects từ Firebase: ", error);
     });
 
     return () => {
@@ -40,12 +48,18 @@ export const AppProvider = ({ children }) => {
     setTheme(savedTheme);
     document.documentElement.setAttribute('data-theme', savedTheme);
     
-    const savedAuth = localStorage.getItem('isAuthenticated') === 'true';
-    const savedRole = localStorage.getItem('role') || 'ADMIN';
-    if (savedAuth) {
-      setIsAuthenticated(true);
-      setRole(savedRole);
-    }
+    // Lắng nghe trạng thái đăng nhập từ Firebase
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setIsAuthenticated(true);
+        // Vì chỉ dùng 1 tài khoản chung, ta mặc định set role là ADMIN
+        setRole('ADMIN');
+      } else {
+        setIsAuthenticated(false);
+      }
+    });
+
+    return () => unsubscribeAuth();
   }, []);
 
   const toggleTheme = () => {
@@ -55,16 +69,12 @@ export const AppProvider = ({ children }) => {
     document.documentElement.setAttribute('data-theme', newTheme);
   };
 
-  const login = (selectedRole) => {
-    setIsAuthenticated(true);
-    setRole(selectedRole);
-    localStorage.setItem('isAuthenticated', 'true');
-    localStorage.setItem('role', selectedRole);
-  };
-
-  const logout = () => {
-    setIsAuthenticated(false);
-    localStorage.removeItem('isAuthenticated');
+  const logout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error("Lỗi đăng xuất: ", error);
+    }
   };
 
   const toggleRole = () => {
@@ -179,7 +189,7 @@ export const AppProvider = ({ children }) => {
 
   return (
     <AppContext.Provider value={{ 
-      isAuthenticated, login, logout, 
+      isAuthenticated, logout, 
       role, toggleRole, 
       theme, toggleTheme,
       projects, addProject, updateProject, removeProject,
