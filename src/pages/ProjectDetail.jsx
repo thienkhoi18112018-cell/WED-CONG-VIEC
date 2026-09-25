@@ -54,14 +54,15 @@ const ProjectDetail = () => {
     KHAC: { label: 'Tiền khác', badge: 'badge-secondary', icon: '📦' }
   };
 
+  // State xuất PDF
+  const [isExporting, setIsExporting] = useState(false);
+
   // Refs cho xuất PDF
   const reportRef = useRef();
 
-  if (!project) return <div className="page-container">Dự án không tồn tại!</div>;
-
   const calculateProgress = () => {
-    if (project.isCompleted) return 100;
-    const expectedDays = project.durationMonths * 30;
+    if (!project || project.isCompleted) return 100;
+    const expectedDays = (project.durationMonths || 1) * 30;
     const workingDaysCount = (project.dailyLogs || []).filter(l => l.isWorking).length;
     return Math.min(Math.round((workingDaysCount / expectedDays) * 100), 99);
   };
@@ -69,7 +70,7 @@ const ProjectDetail = () => {
   const currentProgress = calculateProgress();
   
   const checkDelay = () => {
-    if (project.isCompleted) return false;
+    if (!project || project.isCompleted) return false;
     if (!project.startDate || !project.durationMonths) return false;
     const start = new Date(project.startDate);
     const expectedEnd = new Date(start.setMonth(start.getMonth() + project.durationMonths));
@@ -265,8 +266,6 @@ const ProjectDetail = () => {
   };
 
   // 4. Xuất file PDF Báo cáo theo bộ lọc
-  const [isExporting, setIsExporting] = useState(false);
-
   const exportPDF = async () => {
     const input = reportRef.current;
     if (!input) return;
@@ -403,6 +402,10 @@ const ProjectDetail = () => {
     setTransAmount('');
     setTransNote('');
   };
+
+  if (!project) {
+    return <div className="page-container">Dự án không tồn tại!</div>;
+  }
 
   return (
     <div className="page-container animate-fade-in">

@@ -696,7 +696,7 @@ const Finance = () => {
                   <span className="text-xs text-secondary font-medium">Danh sách hiển thị:</span>
                   <div className="font-bold text-sm">
                     {filteredModalExpenses.length} khoản chi phí
-                    {modalSearch && <span className="text-secondary text-xs"> (Khớp với từ khóa "{modalSearch}")</span>}
+                    {modalSearch && <span className="text-secondary text-xs"> (Khớp với từ khóa &ldquo;{modalSearch}&rdquo;)</span>}
                   </div>
                 </div>
                 <div className="text-right">
