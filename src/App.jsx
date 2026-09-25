@@ -12,6 +12,7 @@ import Design from './pages/Design';
 import DesignDetail from './pages/DesignDetail';
 import Documents from './pages/Documents';
 import Finance from './pages/Finance';
+import CompanyExpenses from './pages/CompanyExpenses';
 import Settings from './pages/Settings';
 
 const ProtectedRoute = ({ children }) => {
@@ -44,6 +45,7 @@ function AppRoutes() {
         <Route path="design" element={<Design />} />
         <Route path="design/:id" element={<DesignDetail />} />
         <Route path="documents" element={<Documents />} />
+        <Route path="company-expenses" element={<CompanyExpenses />} />
         <Route path="finance" element={<Finance />} />
         <Route path="settings" element={<Settings />} />
       </Route>

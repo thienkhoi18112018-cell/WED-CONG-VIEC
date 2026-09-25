@@ -148,6 +148,9 @@ ul {
 .badge-warning { background: rgba(245, 158, 11, 0.1); color: var(--warning); }
 .badge-danger { background: rgba(239, 68, 68, 0.1); color: var(--danger); }
 .badge-info { background: rgba(14, 165, 233, 0.1); color: var(--info); }
+.badge-primary { background: rgba(59, 130, 246, 0.1); color: var(--accent-primary); }
+.badge-orange { background: rgba(249, 115, 22, 0.1); color: var(--accent-secondary); }
+.badge-secondary { background: rgba(100, 116, 139, 0.15); color: var(--text-secondary); }
 
 /* Layout classes */
 .flex { display: flex; }
@@ -231,6 +234,8 @@ ul {
 .table th, .table td {
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border-color);
+  word-break: break-word;
+  white-space: normal;
 }
 
 .table th {

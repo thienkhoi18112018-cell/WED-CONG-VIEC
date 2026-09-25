@@ -14,8 +14,7 @@ export const AppProvider = ({ children }) => {
   const [projects, setProjects] = useState([]);
   const [designs, setDesigns] = useState([]);
   const [pastProjects, setPastProjects] = useState([]);
-
-
+  const [companyExpenses, setCompanyExpenses] = useState([]);
 
   // Lắng nghe dữ liệu realtime từ Firebase
   useEffect(() => {
@@ -35,11 +34,17 @@ export const AppProvider = ({ children }) => {
     }, (error) => {
       console.error("Lỗi tải dữ liệu PastProjects từ Firebase: ", error);
     });
+    const unsubExpenses = onSnapshot(collection(db, 'companyExpenses'), (snapshot) => {
+      setCompanyExpenses(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      console.error("Lỗi tải dữ liệu CompanyExpenses từ Firebase: ", error);
+    });
 
     return () => {
       unsubProjects();
       unsubDesigns();
       unsubPastProjects();
+      unsubExpenses();
     };
   }, []);
 
@@ -187,6 +192,18 @@ export const AppProvider = ({ children }) => {
     await deleteDoc(doc(db, 'pastProjects', id.toString()));
   };
 
+  // --- QUẢN LÝ CHI PHÍ CÔNG TY ---
+  const addCompanyExpense = async (expense) => {
+    const newId = Date.now().toString();
+    await setDoc(doc(db, 'companyExpenses', newId), { ...expense, id: newId, createdAt: new Date().toISOString() });
+  };
+  const updateCompanyExpense = async (id, updatedExpense) => {
+    await updateDoc(doc(db, 'companyExpenses', id.toString()), updatedExpense);
+  };
+  const removeCompanyExpense = async (id) => {
+    await deleteDoc(doc(db, 'companyExpenses', id.toString()));
+  };
+
   return (
     <AppContext.Provider value={{ 
       isAuthenticated, logout, 
@@ -196,7 +213,8 @@ export const AppProvider = ({ children }) => {
       addDailyLog, updateDailyLog, removeDailyLog, addTransaction, updateTransaction, removeTransaction,
       designs, addDesign, updateDesign, removeDesign,
       addDesignTransaction, updateDesignTransaction, removeDesignTransaction,
-      pastProjects, addPastProject, updatePastProject, removePastProject
+      pastProjects, addPastProject, updatePastProject, removePastProject,
+      companyExpenses, addCompanyExpense, updateCompanyExpense, removeCompanyExpense
     }}>
       {children}
     </AppContext.Provider>

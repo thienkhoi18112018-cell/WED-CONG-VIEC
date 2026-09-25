@@ -24,17 +24,29 @@ const Documents = () => {
 
     setIsUploading(true);
     try {
-      const fileRef = ref(storage, `documents/${Date.now()}_${file.name}`);
-      await uploadBytes(fileRef, file);
-      const url = await getDownloadURL(fileRef);
+      // Sử dụng Cloudinary thay cho Firebase Storage
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('upload_preset', 't4pe5mv6'); // Preset người dùng cung cấp
 
-      await addDoc(collection(db, 'documents'), {
-        name: file.name,
-        url,
-        size: file.size,
-        type: file.type,
-        uploadedAt: new Date().toISOString()
+      const response = await fetch('https://api.cloudinary.com/v1_1/dcycbg68u/upload', {
+        method: 'POST',
+        body: formData
       });
+
+      const result = await response.json();
+
+      if (result.secure_url) {
+        await addDoc(collection(db, 'documents'), {
+          name: file.name,
+          url: result.secure_url,
+          size: file.size,
+          type: file.type || result.format || 'unknown',
+          uploadedAt: new Date().toISOString()
+        });
+      } else {
+        throw new Error(result.error?.message || 'Tải lên Cloudinary thất bại');
+      }
     } catch (error) {
       console.error("Lỗi upload:", error);
       alert("Tải lên thất bại!");
@@ -44,13 +56,12 @@ const Documents = () => {
     }
   };
 
-  const handleDelete = async (docId, fileUrl) => {
+  const handleDelete = async (docId) => {
     if (window.confirm('Xác nhận xóa tài liệu này?')) {
       try {
         await deleteDoc(doc(db, 'documents', docId));
-        // Optional: Delete from storage
-        const fileRef = ref(storage, fileUrl);
-        await deleteObject(fileRef).catch(() => console.log('File not found in storage'));
+        // Lưu ý: File thực tế trên Cloudinary sẽ không bị xóa tự động từ Frontend
+        // Để bảo mật, chỉ có thể xóa file thông qua Cloudinary Dashboard hoặc Backend Server
       } catch (error) {
         console.error("Lỗi xóa:", error);
       }
@@ -110,7 +121,7 @@ const Documents = () => {
                         <Download size={14} /> Tải về
                       </a>
                       {role === 'ADMIN' && (
-                        <button className="icon-btn text-danger" onClick={() => handleDelete(docItem.id, docItem.url)} title="Xóa">
+                        <button className="icon-btn text-danger" onClick={() => handleDelete(docItem.id)} title="Xóa">
                           <Trash2 size={16} />
                         </button>
                       )}

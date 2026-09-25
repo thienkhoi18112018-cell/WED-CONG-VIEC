@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, HardHat, PenTool, FileText, DollarSign, Settings, X } from 'lucide-react';
+import { LayoutDashboard, HardHat, PenTool, FileText, Building2, DollarSign, Settings, X } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import './Sidebar.css'; 
 
@@ -43,6 +43,12 @@ const Sidebar = ({ isOpen, closeSidebar }) => {
             <NavLink to="/dashboard/documents" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <FileText size={20} />
               <span>Tài liệu nội bộ</span>
+            </NavLink>
+          </li>
+          <li>
+            <NavLink to="/dashboard/company-expenses" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+              <Building2 size={20} />
+              <span>Chi phí công ty</span>
             </NavLink>
           </li>
           

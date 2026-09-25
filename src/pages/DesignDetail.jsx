@@ -92,18 +92,20 @@ const DesignDetail = () => {
         </div>
       </div>
 
-      <div className="grid md:grid-cols-3 gap-6">
-        <div className="md:col-span-1">
-          <div className="card mb-4 bg-primary text-white" style={{ background: 'var(--accent-primary)', color: 'white' }}>
-            <div className="mb-2 opacity-80">Tổng thu (Tiền vào)</div>
-            <div className="text-2xl font-bold">{totalIn.toLocaleString('vi-VN')} VNĐ</div>
-          </div>
-          <div className="card mb-4" style={{ background: 'var(--danger)', color: 'white' }}>
-            <div className="mb-2 opacity-80">Tổng chi (Tiền ra)</div>
-            <div className="text-2xl font-bold">{totalOut.toLocaleString('vi-VN')} VNĐ</div>
+      <div className="flex flex-col gap-8">
+        <div>
+          <div className="grid md:grid-cols-2 gap-4 mb-4" style={{ maxWidth: '800px' }}>
+            <div className="card bg-primary text-white" style={{ background: 'var(--accent-primary)', color: 'white' }}>
+              <div className="mb-2 opacity-80">Tổng thu (Tiền vào)</div>
+              <div className="text-2xl font-bold">{totalIn.toLocaleString('vi-VN')} VNĐ</div>
+            </div>
+            <div className="card" style={{ background: 'var(--danger)', color: 'white' }}>
+              <div className="mb-2 opacity-80">Tổng chi (Tiền ra)</div>
+              <div className="text-2xl font-bold">{totalOut.toLocaleString('vi-VN')} VNĐ</div>
+            </div>
           </div>
           
-          <div className="card">
+          <div className="card" style={{ maxWidth: '800px' }}>
             <h3 className="font-bold mb-4">{editingTransId ? 'Sửa Thu/Chi' : 'Ghi nhận Thu/Chi'}</h3>
             <form onSubmit={handleAddTrans} className="flex flex-col gap-4">
               <div className="input-group">
@@ -133,8 +135,8 @@ const DesignDetail = () => {
           </div>
         </div>
         
-        <div className="md:col-span-2">
-          <div className="card h-full">
+        <div>
+          <div className="card w-full">
             <h3 className="font-bold mb-4">Lịch sử giao dịch</h3>
             <div className="table-container">
               <table className="table">

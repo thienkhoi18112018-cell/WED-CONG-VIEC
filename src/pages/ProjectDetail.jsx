@@ -28,8 +28,16 @@ const ProjectDetail = () => {
   const [editingTransId, setEditingTransId] = useState(null);
   const [transDate, setTransDate] = useState(new Date().toISOString().slice(0,10));
   const [transType, setTransType] = useState('IN');
+  const [expenseCategory, setExpenseCategory] = useState('THO_XAY'); // 'THO_XAY' | 'THO_KHAC' | 'VAT_TU' | 'KHAC'
   const [transAmount, setTransAmount] = useState('');
   const [transNote, setTransNote] = useState('');
+
+  const EXPENSE_CATEGORIES = {
+    THO_XAY: { label: 'Tiền thợ xây', badge: 'badge-primary', icon: '🧱' },
+    THO_KHAC: { label: 'Tiền thợ khác', badge: 'badge-info', icon: '⚡' },
+    VAT_TU: { label: 'Tiền vật tư', badge: 'badge-orange', icon: '🏗️' },
+    KHAC: { label: 'Tiền khác', badge: 'badge-secondary', icon: '📦' }
+  };
 
   // Refs cho xuất PDF
   const reportRef = useRef();
@@ -168,6 +176,7 @@ const ProjectDetail = () => {
     setEditingTransId(t.id);
     setTransDate(t.date);
     setTransType(t.type);
+    setExpenseCategory(t.expenseCategory || 'THO_XAY');
     setTransAmount(t.amount.toString());
     setTransNote(t.note);
   };
@@ -176,6 +185,7 @@ const ProjectDetail = () => {
     setEditingTransId(null);
     setTransDate(new Date().toISOString().slice(0,10));
     setTransType('IN');
+    setExpenseCategory('THO_XAY');
     setTransAmount('');
     setTransNote('');
   };
@@ -183,8 +193,11 @@ const ProjectDetail = () => {
   const handleAddTrans = (e) => {
     e.preventDefault();
     const data = {
-      date: transDate, type: transType, note: transNote,
-      amount: parseInt(transAmount.replace(/\D/g, '')) || 0
+      date: transDate, 
+      type: transType, 
+      note: transNote,
+      amount: parseInt(transAmount.replace(/\D/g, '')) || 0,
+      expenseCategory: transType === 'OUT' ? (expenseCategory || 'THO_XAY') : null
     };
     if (editingTransId) {
       updateTransaction(project.id, editingTransId, data);
@@ -198,6 +211,12 @@ const ProjectDetail = () => {
 
   const totalIn = (project.transactions || []).filter(t => t.type === 'IN').reduce((sum, t) => sum + t.amount, 0);
   const totalOut = (project.transactions || []).filter(t => t.type === 'OUT').reduce((sum, t) => sum + t.amount, 0);
+
+  // Chi tiết từng nhóm chi phí đầu ra
+  const totalThoXay = (project.transactions || []).filter(t => t.type === 'OUT' && t.expenseCategory === 'THO_XAY').reduce((sum, t) => sum + t.amount, 0);
+  const totalThoKhac = (project.transactions || []).filter(t => t.type === 'OUT' && t.expenseCategory === 'THO_KHAC').reduce((sum, t) => sum + t.amount, 0);
+  const totalVatTu = (project.transactions || []).filter(t => t.type === 'OUT' && t.expenseCategory === 'VAT_TU').reduce((sum, t) => sum + t.amount, 0);
+  const totalKhac = (project.transactions || []).filter(t => t.type === 'OUT' && (!t.expenseCategory || t.expenseCategory === 'KHAC')).reduce((sum, t) => sum + t.amount, 0);
 
   return (
     <div className="page-container animate-fade-in">
@@ -270,23 +289,30 @@ const ProjectDetail = () => {
                       <tr>
                         <th>Ngày</th>
                         <th>Loại</th>
+                        <th>Phân loại</th>
                         <th>Nội dung</th>
                         <th className="text-right">Số tiền (VNĐ)</th>
                       </tr>
                     </thead>
                     <tbody>
                       <tr>
-                        <td colSpan="3" className="font-bold text-right">Tổng thu:</td>
+                        <td colSpan="4" className="font-bold text-right">Tổng thu:</td>
                         <td className="text-right font-bold text-success">+{totalIn.toLocaleString('vi-VN')}</td>
                       </tr>
                       <tr>
-                        <td colSpan="3" className="font-bold text-right">Tổng chi:</td>
+                        <td colSpan="4" className="font-bold text-right">Tổng chi:</td>
                         <td className="text-right font-bold text-danger">-{totalOut.toLocaleString('vi-VN')}</td>
+                      </tr>
+                      <tr style={{ background: '#f8fafc', fontSize: '0.85em', color: '#475569' }}>
+                        <td colSpan="5">
+                          <strong>Bóc tách chi phí:</strong> 🧱 Thợ xây: {totalThoXay.toLocaleString('vi-VN')}đ | ⚡ Thợ khác: {totalThoKhac.toLocaleString('vi-VN')}đ | 🏗️ Vật tư: {totalVatTu.toLocaleString('vi-VN')}đ | 📦 Khác: {totalKhac.toLocaleString('vi-VN')}đ
+                        </td>
                       </tr>
                       {[...(project.transactions || [])].sort((a,b) => new Date(b.date) - new Date(a.date)).map(t => (
                         <tr key={t.id}>
                           <td>{t.date}</td>
                           <td>{t.type === 'IN' ? 'Tiền Vào' : 'Tiền Ra'}</td>
+                          <td>{t.type === 'IN' ? '-' : (EXPENSE_CATEGORIES[t.expenseCategory]?.label || 'Tiền khác')}</td>
                           <td>{t.note}</td>
                           <td className="text-right">{t.amount.toLocaleString('vi-VN')}</td>
                         </tr>
@@ -330,9 +356,9 @@ const ProjectDetail = () => {
       </div>
 
       {activeTab === 'LOGS' && (
-        <div className="grid md:grid-cols-3 gap-6">
-          <div className="md:col-span-1">
-            <div className="card">
+        <div className="flex flex-col gap-8">
+          <div>
+            <div className="card" style={{ maxWidth: '800px' }}>
               <h3 className="font-bold mb-4">{editingLogId ? 'Sửa nhật ký' : 'Ghi nhận nhật ký'}</h3>
               <form onSubmit={handleAddLog} className="flex flex-col gap-4">
                 <div className="input-group">
@@ -371,7 +397,6 @@ const ProjectDetail = () => {
                       <input 
                         type="file" 
                         accept="image/*" 
-                        capture="environment" 
                         className="hidden" 
                         onChange={e => setLogImage(e.target.files[0])} 
                       />
@@ -388,8 +413,8 @@ const ProjectDetail = () => {
               </form>
             </div>
           </div>
-          <div className="md:col-span-2">
-            <div className="card h-full">
+          <div>
+            <div className="card w-full">
               <h3 className="font-bold mb-4">Lịch sử nhật ký</h3>
               <div className="table-container">
                 <table className="table">
@@ -440,38 +465,76 @@ const ProjectDetail = () => {
       )}
 
       {activeTab === 'FINANCE' && (
-        <div className="grid md:grid-cols-3 gap-6">
-          <div className="md:col-span-1">
-            <div className="card mb-4 bg-primary text-white" style={{ background: 'var(--accent-primary)', color: 'white' }}>
-              <div className="mb-2 opacity-80">Tổng thu (Tiền vào)</div>
-              <div className="text-2xl font-bold">{totalIn.toLocaleString('vi-VN')} VNĐ</div>
+        <div className="flex flex-col gap-8">
+          <div>
+            {/* Thống kê Tổng thu & Tổng chi */}
+            <div className="grid md:grid-cols-2 gap-4 mb-4" style={{ maxWidth: '850px' }}>
+              <div className="card text-white" style={{ background: 'var(--accent-primary)', color: 'white' }}>
+                <div className="mb-2 opacity-80">Tổng thu (Tiền vào)</div>
+                <div className="text-2xl font-bold">{totalIn.toLocaleString('vi-VN')} VNĐ</div>
+              </div>
+              <div className="card text-white" style={{ background: 'var(--danger)', color: 'white' }}>
+                <div className="mb-2 opacity-80">Tổng chi (Tiền ra)</div>
+                <div className="text-2xl font-bold">{totalOut.toLocaleString('vi-VN')} VNĐ</div>
+              </div>
             </div>
-            <div className="card mb-4" style={{ background: 'var(--danger)', color: 'white' }}>
-              <div className="mb-2 opacity-80">Tổng chi (Tiền ra)</div>
-              <div className="text-2xl font-bold">{totalOut.toLocaleString('vi-VN')} VNĐ</div>
+
+            {/* Thống kê bóc tách 4 nhóm chi phí */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6" style={{ maxWidth: '850px' }}>
+              <div className="card" style={{ padding: '1rem', borderLeft: '4px solid var(--accent-primary)' }}>
+                <div className="text-xs text-secondary font-medium mb-1">🧱 Thợ xây ứng/trả</div>
+                <div className="text-lg font-bold text-primary">{totalThoXay.toLocaleString('vi-VN')} <span className="text-xs">đ</span></div>
+              </div>
+              <div className="card" style={{ padding: '1rem', borderLeft: '4px solid var(--info)' }}>
+                <div className="text-xs text-secondary font-medium mb-1">⚡ Thợ khác chi</div>
+                <div className="text-lg font-bold" style={{ color: 'var(--info)' }}>{totalThoKhac.toLocaleString('vi-VN')} <span className="text-xs">đ</span></div>
+              </div>
+              <div className="card" style={{ padding: '1rem', borderLeft: '4px solid var(--accent-secondary)' }}>
+                <div className="text-xs text-secondary font-medium mb-1">🏗️ Tiền vật tư</div>
+                <div className="text-lg font-bold" style={{ color: 'var(--accent-secondary)' }}>{totalVatTu.toLocaleString('vi-VN')} <span className="text-xs">đ</span></div>
+              </div>
+              <div className="card" style={{ padding: '1rem', borderLeft: '4px solid var(--text-secondary)' }}>
+                <div className="text-xs text-secondary font-medium mb-1">📦 Chi phí khác</div>
+                <div className="text-lg font-bold text-secondary">{totalKhac.toLocaleString('vi-VN')} <span className="text-xs">đ</span></div>
+              </div>
             </div>
             
-            <div className="card">
+            <div className="card" style={{ maxWidth: '850px' }}>
               <h3 className="font-bold mb-4">{editingTransId ? 'Sửa Thu/Chi' : 'Ghi nhận Thu/Chi'}</h3>
               <form onSubmit={handleAddTrans} className="flex flex-col gap-4">
-                <div className="input-group">
-                  <label className="input-label">Ngày giao dịch</label>
-                  <input type="date" required className="input-field" value={transDate} onChange={e=>setTransDate(e.target.value)} />
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="input-group">
+                    <label className="input-label">Ngày giao dịch</label>
+                    <input type="date" required className="input-field" value={transDate} onChange={e=>setTransDate(e.target.value)} />
+                  </div>
+                  <div className="input-group">
+                    <label className="input-label">Loại giao dịch</label>
+                    <select className="input-field" value={transType} onChange={e=>setTransType(e.target.value)}>
+                      <option value="IN">Tiền Vào (Khách thanh toán...)</option>
+                      <option value="OUT">Tiền Ra (Chi trả công trình)</option>
+                    </select>
+                  </div>
                 </div>
-                <div className="input-group">
-                  <label className="input-label">Loại giao dịch</label>
-                  <select className="input-field" value={transType} onChange={e=>setTransType(e.target.value)}>
-                    <option value="IN">Tiền Vào (Khách thanh toán...)</option>
-                    <option value="OUT">Tiền Ra (Mua vật tư, trả thợ...)</option>
-                  </select>
-                </div>
+
+                {transType === 'OUT' && (
+                  <div className="input-group animate-fade-in">
+                    <label className="input-label font-bold" style={{ color: 'var(--danger)' }}>Phân loại khoản chi</label>
+                    <select className="input-field" value={expenseCategory} onChange={e=>setExpenseCategory(e.target.value)} style={{ borderColor: 'var(--danger)' }}>
+                      <option value="THO_XAY">🧱 Tiền thợ xây (Ứng thợ, tiền công)</option>
+                      <option value="THO_KHAC">⚡ Tiền thợ khác (Điện, nước, thạch cao, sơn, nhôm...)</option>
+                      <option value="VAT_TU">🏗️ Tiền vật tư (Xi măng, cát, đá, sắt thép, gạch...)</option>
+                      <option value="KHAC">📦 Tiền khác (Vận chuyển, máy móc, phát sinh...)</option>
+                    </select>
+                  </div>
+                )}
+
                 <div className="input-group">
                   <label className="input-label">Số tiền (VNĐ)</label>
                   <input type="number" min="0" required className="input-field" value={transAmount} onChange={e=>setTransAmount(e.target.value)} placeholder="Nhập số tiền..." />
                 </div>
                 <div className="input-group">
-                  <label className="input-label">Nội dung</label>
-                  <input type="text" required className="input-field" value={transNote} onChange={e=>setTransNote(e.target.value)} placeholder="VD: Mua xi măng..." />
+                  <label className="input-label">Nội dung chi tiết</label>
+                  <input type="text" required className="input-field" value={transNote} onChange={e=>setTransNote(e.target.value)} placeholder={transType === 'OUT' ? (expenseCategory === 'THO_XAY' ? 'VD: Thợ Ba ứng lần 2...' : expenseCategory === 'VAT_TU' ? 'VD: 3 xe cát bãi Ba Thắng...' : 'VD: Mua dây điện cadivi...') : 'VD: Khách tạm ứng đợt 1...'} />
                 </div>
                 <div className="flex gap-2">
                   <button type="submit" className="btn btn-primary w-full justify-center">{editingTransId ? 'Lưu chỉnh sửa' : 'Thêm mới'}</button>
@@ -481,8 +544,8 @@ const ProjectDetail = () => {
             </div>
           </div>
           
-          <div className="md:col-span-2">
-            <div className="card h-full">
+          <div>
+            <div className="card w-full">
               <h3 className="font-bold mb-4">Lịch sử giao dịch</h3>
               <div className="table-container">
                 <table className="table">
@@ -490,32 +553,45 @@ const ProjectDetail = () => {
                     <tr>
                       <th>Ngày</th>
                       <th>Loại</th>
+                      <th>Phân loại</th>
                       <th>Nội dung</th>
                       <th className="text-right">Số tiền</th>
                       <th className="text-right">Thao tác</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {[...(project.transactions || [])].sort((a,b) => new Date(b.date) - new Date(a.date)).map(t => (
-                      <tr key={t.id} style={{ background: editingTransId === t.id ? 'var(--bg-secondary)' : 'transparent' }}>
-                        <td>{t.date}</td>
-                        <td>
-                          {t.type === 'IN' ? <span className="badge badge-success">Tiền Vào</span> : <span className="badge badge-danger">Tiền Ra</span>}
-                        </td>
-                        <td>{t.note}</td>
-                        <td className="text-right font-bold" style={{ color: t.type === 'IN' ? 'var(--success)' : 'var(--danger)' }}>
-                          {t.type === 'IN' ? '+' : '-'}{t.amount.toLocaleString('vi-VN')}
-                        </td>
-                        <td className="text-right">
-                          <div className="flex gap-2 justify-end">
-                            <button onClick={() => startEditTrans(t)} className="icon-btn text-info" title="Sửa"><Edit size={16} /></button>
-                            <button onClick={() => removeTransaction(project.id, t.id)} className="icon-btn text-danger" title="Xóa"><Trash2 size={16} /></button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                    {[...(project.transactions || [])].sort((a,b) => new Date(b.date) - new Date(a.date)).map(t => {
+                      const catInfo = EXPENSE_CATEGORIES[t.expenseCategory] || (t.type === 'OUT' ? EXPENSE_CATEGORIES.KHAC : null);
+                      return (
+                        <tr key={t.id} style={{ background: editingTransId === t.id ? 'var(--bg-secondary)' : 'transparent' }}>
+                          <td>{t.date}</td>
+                          <td>
+                            {t.type === 'IN' ? <span className="badge badge-success">Tiền Vào</span> : <span className="badge badge-danger">Tiền Ra</span>}
+                          </td>
+                          <td>
+                            {t.type === 'IN' ? (
+                              <span className="text-secondary text-xs">-</span>
+                            ) : (
+                              <span className={`badge ${catInfo?.badge || 'badge-secondary'}`}>
+                                {catInfo?.icon} {catInfo?.label}
+                              </span>
+                            )}
+                          </td>
+                          <td>{t.note}</td>
+                          <td className="text-right font-bold" style={{ color: t.type === 'IN' ? 'var(--success)' : 'var(--danger)' }}>
+                            {t.type === 'IN' ? '+' : '-'}{t.amount.toLocaleString('vi-VN')}
+                          </td>
+                          <td className="text-right">
+                            <div className="flex gap-2 justify-end">
+                              <button onClick={() => startEditTrans(t)} className="icon-btn text-info" title="Sửa"><Edit size={16} /></button>
+                              <button onClick={() => removeTransaction(project.id, t.id)} className="icon-btn text-danger" title="Xóa"><Trash2 size={16} /></button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                     {(project.transactions || []).length === 0 && (
-                      <tr><td colSpan="5" className="text-center text-secondary py-4">Chưa có giao dịch nào.</td></tr>
+                      <tr><td colSpan="6" className="text-center text-secondary py-4">Chưa có giao dịch nào.</td></tr>
                     )}
                   </tbody>
                 </table>
