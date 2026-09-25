@@ -26,10 +26,11 @@ const COMPANY_EXPENSE_CATEGORIES = {
 const Finance = () => {
   const { role, projects, designs, companyExpenses } = useAppContext();
 
-  // State cho Modal chi tiết chi tiêu khi click vào các thẻ
+  // State cho Modal chi tiết thu/chi khi click vào các thẻ
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalPeriod, setModalPeriod] = useState('TODAY'); // 'TODAY' | 'WEEK' | 'MONTH' | 'ALL' | 'COMPANY' | 'PROJECTS'
   const [modalSourceFilter, setModalSourceFilter] = useState('ALL'); // 'ALL' | 'CONSTRUCTION' | 'DESIGN' | 'COMPANY'
+  const [modalTypeFilter, setModalTypeFilter] = useState('ALL'); // 'ALL' | 'IN' | 'OUT'
   const [modalSearch, setModalSearch] = useState('');
 
   // Tổng hợp dữ liệu
@@ -38,12 +39,14 @@ const Finance = () => {
     totalOut, 
     totalProjectOut, 
     totalCompanyOut, 
+    incomeToday,
     spentToday, 
+    incomeThisWeek,
     spentThisWeek, 
     totalContractValue, 
     chartData, 
     projectBreakdown,
-    allExpenseItems
+    allFinanceItems
   } = useMemo(() => {
     let tIn = 0;
     let tProjectOut = 0;
@@ -68,10 +71,15 @@ const Finance = () => {
     sunday.setDate(monday.getDate() + 6);
     sunday.setHours(23, 59, 59, 999);
 
+    const mondayStr = `${monday.getFullYear()}-${pad(monday.getMonth() + 1)}-${pad(monday.getDate())}`;
+    const sundayStr = `${sunday.getFullYear()}-${pad(sunday.getMonth() + 1)}-${pad(sunday.getDate())}`;
+
+    let todayInSum = 0;
     let todayOutSum = 0;
+    let thisWeekInSum = 0;
     let thisWeekOutSum = 0;
 
-    const allExpenses = [];
+    const allFinance = [];
     const allTransactions = [];
     const pBreakdown = [];
 
@@ -81,26 +89,47 @@ const Finance = () => {
       let pOut = 0;
       (p.transactions || []).forEach((t, idx) => {
         allTransactions.push(t);
+        const isToday = t.date === todayStr;
+        const isWeek = t.date >= mondayStr && t.date <= sundayStr;
+        const isMonth = t.date && t.date.startsWith(currentMonthStr);
+
         if (t.type === 'IN') { 
           tIn += t.amount; 
           pIn += t.amount; 
+          if (isToday) todayInSum += t.amount;
+          if (isWeek) thisWeekInSum += t.amount;
+
+          allFinance.push({
+            id: `p-in-${p.id}-${t.id || idx}`,
+            type: 'IN',
+            date: t.date,
+            amount: t.amount,
+            note: t.note || 'Thu tiền đợt thi công',
+            sourceType: 'CONSTRUCTION',
+            sourceTypeName: 'Dự án Thi Công',
+            sourceName: p.name,
+            sourceId: p.id,
+            sourceLink: `/dashboard/construction/${p.id}`,
+            category: 'THU',
+            categoryLabel: 'Tiền thu (Vào)',
+            categoryIcon: '💰',
+            categoryBadge: 'badge-success',
+            isToday,
+            isThisWeek: isWeek,
+            isThisMonth: isMonth
+          });
         }
         if (t.type === 'OUT') { 
           tProjectOut += t.amount; 
           pOut += t.amount;
-          
-          const isToday = t.date === todayStr;
-          const d = new Date(t.date);
-          const isWeek = d >= monday && d <= sunday;
-          const isMonth = t.date && t.date.startsWith(currentMonthStr);
-
           if (isToday) todayOutSum += t.amount;
           if (isWeek) thisWeekOutSum += t.amount;
 
           const catInfo = PROJECT_EXPENSE_CATEGORIES[t.expenseCategory] || PROJECT_EXPENSE_CATEGORIES.KHAC;
 
-          allExpenses.push({
-            id: `p-${p.id}-${t.id || idx}`,
+          allFinance.push({
+            id: `p-out-${p.id}-${t.id || idx}`,
+            type: 'OUT',
             date: t.date,
             amount: t.amount,
             note: t.note || 'Chi phí thi công',
@@ -132,24 +161,45 @@ const Finance = () => {
       let dOut = 0;
       (d.transactions || []).forEach((t, idx) => {
         allTransactions.push(t);
+        const isToday = t.date === todayStr;
+        const isWeek = t.date >= mondayStr && t.date <= sundayStr;
+        const isMonth = t.date && t.date.startsWith(currentMonthStr);
+
         if (t.type === 'IN') { 
           tIn += t.amount; 
           dIn += t.amount; 
+          if (isToday) todayInSum += t.amount;
+          if (isWeek) thisWeekInSum += t.amount;
+
+          allFinance.push({
+            id: `d-in-${d.id}-${t.id || idx}`,
+            type: 'IN',
+            date: t.date,
+            amount: t.amount,
+            note: t.note || 'Thu tiền hợp đồng thiết kế',
+            sourceType: 'DESIGN',
+            sourceTypeName: 'Hồ sơ Thiết Kế',
+            sourceName: d.name,
+            sourceId: d.id,
+            sourceLink: `/dashboard/design/${d.id}`,
+            category: 'THU',
+            categoryLabel: 'Tiền thu (Vào)',
+            categoryIcon: '💰',
+            categoryBadge: 'badge-success',
+            isToday,
+            isThisWeek: isWeek,
+            isThisMonth: isMonth
+          });
         }
         if (t.type === 'OUT') { 
           tProjectOut += t.amount; 
           dOut += t.amount; 
-
-          const isToday = t.date === todayStr;
-          const dateObj = new Date(t.date);
-          const isWeek = dateObj >= monday && dateObj <= sunday;
-          const isMonth = t.date && t.date.startsWith(currentMonthStr);
-
           if (isToday) todayOutSum += t.amount;
           if (isWeek) thisWeekOutSum += t.amount;
 
-          allExpenses.push({
-            id: `d-${d.id}-${t.id || idx}`,
+          allFinance.push({
+            id: `d-out-${d.id}-${t.id || idx}`,
+            type: 'OUT',
             date: t.date,
             amount: t.amount,
             note: t.note || 'Chi phí thiết kế',
@@ -181,8 +231,7 @@ const Finance = () => {
       tCompanyOut += amt;
 
       const isToday = exp.date === todayStr;
-      const dateObj = new Date(exp.date);
-      const isWeek = dateObj >= monday && dateObj <= sunday;
+      const isWeek = exp.date >= mondayStr && exp.date <= sundayStr;
       const isMonth = exp.date && exp.date.startsWith(currentMonthStr);
 
       if (isToday) todayOutSum += amt;
@@ -190,8 +239,9 @@ const Finance = () => {
 
       const catInfo = COMPANY_EXPENSE_CATEGORIES[exp.category] || COMPANY_EXPENSE_CATEGORIES.KHAC;
 
-      allExpenses.push({
-        id: `c-${exp.id || idx}`,
+      allFinance.push({
+        id: `c-out-${exp.id || idx}`,
+        type: 'OUT',
         date: exp.date,
         amount: amt,
         note: exp.note ? (exp.recipient ? `${exp.note} (Người nhận: ${exp.recipient})` : exp.note) : (exp.recipient ? `Chi trả: ${exp.recipient}` : 'Chi phí vận hành'),
@@ -241,18 +291,20 @@ const Finance = () => {
       totalOut: totalAllOut,
       totalProjectOut: tProjectOut,
       totalCompanyOut: tCompanyOut,
+      incomeToday: todayInSum,
       spentToday: todayOutSum,
+      incomeThisWeek: thisWeekInSum,
       spentThisWeek: thisWeekOutSum,
       totalContractValue: tContract, 
       chartData: months, 
       projectBreakdown: pBreakdown,
-      allExpenseItems: allExpenses
+      allFinanceItems: allFinance
     };
   }, [projects, designs, companyExpenses]);
 
   // Bộ lọc cho Modal chi tiết
-  const filteredModalExpenses = useMemo(() => {
-    return (allExpenseItems || [])
+  const filteredModalItems = useMemo(() => {
+    return (allFinanceItems || [])
       .filter(item => {
         // Lọc theo thời gian / phân hệ
         if (modalPeriod === 'TODAY' && !item.isToday) return false;
@@ -263,6 +315,9 @@ const Finance = () => {
 
         // Lọc theo nguồn
         if (modalSourceFilter !== 'ALL' && item.sourceType !== modalSourceFilter) return false;
+
+        // Lọc theo loại hình (Thu / Chi)
+        if (modalTypeFilter !== 'ALL' && item.type !== modalTypeFilter) return false;
 
         // Tìm kiếm theo từ khóa
         if (modalSearch.trim()) {
@@ -277,39 +332,45 @@ const Finance = () => {
         return true;
       })
       .sort((a, b) => new Date(b.date) - new Date(a.date));
-  }, [allExpenseItems, modalPeriod, modalSourceFilter, modalSearch]);
+  }, [allFinanceItems, modalPeriod, modalSourceFilter, modalTypeFilter, modalSearch]);
 
-  const modalTotalSum = useMemo(() => {
-    return filteredModalExpenses.reduce((sum, item) => sum + item.amount, 0);
-  }, [filteredModalExpenses]);
+  const modalTotalIn = useMemo(() => {
+    return filteredModalItems.filter(i => i.type === 'IN').reduce((sum, item) => sum + item.amount, 0);
+  }, [filteredModalItems]);
+
+  const modalTotalOut = useMemo(() => {
+    return filteredModalItems.filter(i => i.type === 'OUT').reduce((sum, item) => sum + item.amount, 0);
+  }, [filteredModalItems]);
 
   // Đếm số lượng theo chu kỳ
-  const countToday = useMemo(() => (allExpenseItems || []).filter(e => e.isToday).length, [allExpenseItems]);
-  const countWeek = useMemo(() => (allExpenseItems || []).filter(e => e.isThisWeek).length, [allExpenseItems]);
-  const countMonth = useMemo(() => (allExpenseItems || []).filter(e => e.isThisMonth).length, [allExpenseItems]);
-  const countAll = useMemo(() => (allExpenseItems || []).length, [allExpenseItems]);
-  const countCompany = useMemo(() => (allExpenseItems || []).filter(e => e.sourceType === 'COMPANY').length, [allExpenseItems]);
-  const countProjects = useMemo(() => (allExpenseItems || []).filter(e => e.sourceType !== 'COMPANY').length, [allExpenseItems]);
+  const countToday = useMemo(() => (allFinanceItems || []).filter(e => e.isToday).length, [allFinanceItems]);
+  const countWeek = useMemo(() => (allFinanceItems || []).filter(e => e.isThisWeek).length, [allFinanceItems]);
+  const countMonth = useMemo(() => (allFinanceItems || []).filter(e => e.isThisMonth).length, [allFinanceItems]);
+  const countAll = useMemo(() => (allFinanceItems || []).length, [allFinanceItems]);
+  const countCompany = useMemo(() => (allFinanceItems || []).filter(e => e.sourceType === 'COMPANY').length, [allFinanceItems]);
+  const countProjects = useMemo(() => (allFinanceItems || []).filter(e => e.sourceType !== 'COMPANY' && e.type === 'OUT').length, [allFinanceItems]);
 
-  const openModal = (period, source = 'ALL') => {
+  const openModal = (period, source = 'ALL', type = 'ALL') => {
     setModalPeriod(period);
     setModalSourceFilter(source);
+    setModalTypeFilter(type);
     setModalSearch('');
     setIsModalOpen(true);
   };
 
   const exportModalCSV = () => {
-    const periodLabel = modalPeriod === 'TODAY' ? 'Hom_nay' : modalPeriod === 'WEEK' ? 'Tuan_nay' : 'Chi_tiet';
-    const filename = `Chi_tiet_chi_phi_${periodLabel}_${new Date().toISOString().slice(0, 10)}.csv`;
-    const headers = ['STT', 'Ngày', 'Ở đâu / Nguồn', 'Loại hình', 'Mục chi (Phân loại)', 'Nội dung chi tiết', 'Số tiền (VNĐ)'];
-    const rows = filteredModalExpenses.map((item, idx) => [
+    const periodLabel = modalPeriod === 'TODAY' ? 'Hom_nay' : modalPeriod === 'WEEK' ? 'Tuan_nay' : 'Thu_chi';
+    const filename = `Chi_tiet_thu_chi_${periodLabel}_${new Date().toISOString().slice(0, 10)}.csv`;
+    const headers = ['STT', 'Ngày', 'Loại giao dịch', 'Ở đâu / Nguồn', 'Loại hình', 'Mục thu chi (Phân loại)', 'Nội dung chi tiết', 'Số tiền (VNĐ)'];
+    const rows = filteredModalItems.map((item, idx) => [
       idx + 1,
       item.date,
+      item.type === 'IN' ? 'Tiền Vào (Thu)' : 'Tiền Ra (Chi)',
       `"${(item.sourceName || '').replace(/"/g, '""')}"`,
       item.sourceTypeName,
       `"${(item.categoryLabel || '').replace(/"/g, '""')}"`,
       `"${(item.note || '').replace(/"/g, '""')}"`,
-      item.amount
+      item.type === 'IN' ? item.amount : -item.amount
     ]);
     const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\r\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -390,47 +451,97 @@ const Finance = () => {
         </div>
       </div>
 
-      {/* Hàng 2: Theo dõi chi tiêu tức thời & Phân hệ - CÓ THỂ CLICK VÀO XEM CHI TIẾT */}
+      {/* Hàng 2: Theo dõi thu chi tức thời & Phân hệ - CÓ THỂ CLICK VÀO XEM CHI TIẾT */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         
-        {/* Thẻ 1: Tiền đã chi hôm nay */}
+        {/* Thẻ 1: Tổng thu chi hôm nay */}
         <div 
-          className="card card-clickable" 
+          className="card card-clickable flex flex-col justify-between" 
           style={{ borderLeft: '4px solid var(--warning)', background: 'rgba(245, 158, 11, 0.05)' }}
-          onClick={() => openModal('TODAY')}
-          title="Nhấp vào để xem chi tiết hôm nay đã chi mục gì, ở đâu, số tiền cụ thể"
+          onClick={() => openModal('TODAY', 'ALL', 'ALL')}
+          title="Nhấp vào để xem chi tiết các khoản thu chi hôm nay"
         >
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-bold" style={{ color: 'var(--warning)' }}>⚡ TIỀN ĐÃ CHI HÔM NAY</span>
-            <Clock size={18} style={{ color: 'var(--warning)' }} />
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-bold flex items-center gap-1.5" style={{ color: 'var(--warning)' }}>
+                ⚡ TỔNG THU CHI HÔM NAY
+              </span>
+              <Clock size={18} style={{ color: 'var(--warning)' }} />
+            </div>
+
+            <div className="space-y-1.5 my-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-secondary font-medium flex items-center gap-1.5">
+                  <TrendingUp size={14} className="text-success" /> Thu vào:
+                </span>
+                <span className="text-base font-bold text-success">
+                  +{incomeToday.toLocaleString('vi-VN')} <span className="text-xs">đ</span>
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-secondary font-medium flex items-center gap-1.5">
+                  <TrendingDown size={14} className="text-danger" /> Tiền chi:
+                </span>
+                <span className="text-base font-bold text-danger">
+                  -{spentToday.toLocaleString('vi-VN')} <span className="text-xs">đ</span>
+                </span>
+              </div>
+            </div>
           </div>
-          <div className="text-2xl font-bold" style={{ color: 'var(--warning)' }}>
-            {spentToday.toLocaleString('vi-VN')} <span className="text-sm">đ</span>
-          </div>
+
           <div className="flex items-center justify-between text-xs mt-2 pt-2" style={{ borderTop: '1px dashed rgba(245, 158, 11, 0.3)' }}>
-            <span className="text-secondary">Hôm nay ({new Date().toLocaleDateString('vi-VN')})</span>
+            <span className="text-secondary font-medium">
+              Chênh lệch: <b style={{ color: (incomeToday - spentToday) >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                {(incomeToday - spentToday) >= 0 ? '+' : ''}{(incomeToday - spentToday).toLocaleString('vi-VN')} đ
+              </b>
+            </span>
             <span className="font-bold flex items-center gap-1" style={{ color: 'var(--warning)' }}>
               <Eye size={13} /> {countToday > 0 ? `${countToday} khoản` : 'Bấm xem'}
             </span>
           </div>
         </div>
 
-        {/* Thẻ 2: Tiền đã chi tuần này */}
+        {/* Thẻ 2: Tổng thu chi tuần này */}
         <div 
-          className="card card-clickable" 
+          className="card card-clickable flex flex-col justify-between" 
           style={{ borderLeft: '4px solid #8b5cf6', background: 'rgba(139, 92, 246, 0.05)' }}
-          onClick={() => openModal('WEEK')}
-          title="Nhấp vào để xem chi tiết tuần này đã chi những khoản gì"
+          onClick={() => openModal('WEEK', 'ALL', 'ALL')}
+          title="Nhấp vào để xem chi tiết các khoản thu chi tuần này"
         >
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-bold" style={{ color: '#8b5cf6' }}>📆 TIỀN ĐÃ CHI TUẦN NÀY</span>
-            <Calendar size={18} style={{ color: '#8b5cf6' }} />
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-bold flex items-center gap-1.5" style={{ color: '#8b5cf6' }}>
+                📆 TỔNG THU CHI TUẦN NÀY
+              </span>
+              <Calendar size={18} style={{ color: '#8b5cf6' }} />
+            </div>
+
+            <div className="space-y-1.5 my-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-secondary font-medium flex items-center gap-1.5">
+                  <TrendingUp size={14} className="text-success" /> Thu vào:
+                </span>
+                <span className="text-base font-bold text-success">
+                  +{incomeThisWeek.toLocaleString('vi-VN')} <span className="text-xs">đ</span>
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-secondary font-medium flex items-center gap-1.5">
+                  <TrendingDown size={14} className="text-danger" /> Tiền chi:
+                </span>
+                <span className="text-base font-bold text-danger">
+                  -{spentThisWeek.toLocaleString('vi-VN')} <span className="text-xs">đ</span>
+                </span>
+              </div>
+            </div>
           </div>
-          <div className="text-2xl font-bold" style={{ color: '#8b5cf6' }}>
-            {spentThisWeek.toLocaleString('vi-VN')} <span className="text-sm">đ</span>
-          </div>
+
           <div className="flex items-center justify-between text-xs mt-2 pt-2" style={{ borderTop: '1px dashed rgba(139, 92, 246, 0.3)' }}>
-            <span className="text-secondary">Thứ 2 đến Chủ Nhật</span>
+            <span className="text-secondary font-medium">
+              Chênh lệch: <b style={{ color: (incomeThisWeek - spentThisWeek) >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                {(incomeThisWeek - spentThisWeek) >= 0 ? '+' : ''}{(incomeThisWeek - spentThisWeek).toLocaleString('vi-VN')} đ
+              </b>
+            </span>
             <span className="font-bold flex items-center gap-1" style={{ color: '#8b5cf6' }}>
               <Eye size={13} /> {countWeek > 0 ? `${countWeek} khoản` : 'Bấm xem'}
             </span>
@@ -439,17 +550,19 @@ const Finance = () => {
 
         {/* Thẻ 3: Chi phí công ty */}
         <div 
-          className="card card-clickable" 
+          className="card card-clickable flex flex-col justify-between" 
           style={{ borderLeft: '4px solid var(--accent-primary)' }}
-          onClick={() => openModal('COMPANY', 'COMPANY')}
+          onClick={() => openModal('COMPANY', 'COMPANY', 'OUT')}
           title="Nhấp vào để xem bảng kê toàn bộ chi phí vận hành công ty"
         >
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-secondary">Chi Phí Công Ty (Vận hành)</span>
-            <Building2 size={18} className="text-primary" />
-          </div>
-          <div className="text-2xl font-bold text-primary">
-            {totalCompanyOut.toLocaleString('vi-VN')} <span className="text-sm">đ</span>
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-secondary">Chi Phí Công Ty (Vận hành)</span>
+              <Building2 size={18} className="text-primary" />
+            </div>
+            <div className="text-2xl font-bold text-primary my-2">
+              {totalCompanyOut.toLocaleString('vi-VN')} <span className="text-sm">đ</span>
+            </div>
           </div>
           <div className="flex items-center justify-between text-xs mt-2 pt-2" style={{ borderTop: '1px dashed var(--border-color)' }}>
             <span className="text-secondary">Lương, mặt bằng, lặt vặt</span>
@@ -461,17 +574,19 @@ const Finance = () => {
 
         {/* Thẻ 4: Tổng chi các dự án */}
         <div 
-          className="card card-clickable" 
+          className="card card-clickable flex flex-col justify-between" 
           style={{ borderLeft: '4px solid var(--accent-secondary)' }}
-          onClick={() => openModal('PROJECTS', 'ALL')}
+          onClick={() => openModal('PROJECTS', 'ALL', 'OUT')}
           title="Nhấp vào để xem chi tiết tiền chi các công trình thi công & thiết kế"
         >
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-secondary">Tổng Chi Các Dự Án</span>
-            <HardHat size={18} style={{ color: 'var(--accent-secondary)' }} />
-          </div>
-          <div className="text-2xl font-bold" style={{ color: 'var(--accent-secondary)' }}>
-            {totalProjectOut.toLocaleString('vi-VN')} <span className="text-sm">đ</span>
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-secondary">Tổng Chi Các Dự Án</span>
+              <HardHat size={18} style={{ color: 'var(--accent-secondary)' }} />
+            </div>
+            <div className="text-2xl font-bold my-2" style={{ color: 'var(--accent-secondary)' }}>
+              {totalProjectOut.toLocaleString('vi-VN')} <span className="text-sm">đ</span>
+            </div>
           </div>
           <div className="flex items-center justify-between text-xs mt-2 pt-2" style={{ borderTop: '1px dashed var(--border-color)' }}>
             <span className="text-secondary">Vật tư, thợ xây, thợ khác</span>
@@ -565,7 +680,7 @@ const Finance = () => {
       </div>
 
       {/* ========================================================= */}
-      {/* MODAL CHI TIẾT CÁC KHOẢN ĐÃ CHI KHI NHẤP VÀO THẺ THỐNG KÊ */}
+      {/* MODAL CHI TIẾT THU CHI KHI NHẤP VÀO CÁC THẺ THỐNG KÊ */}
       {/* ========================================================= */}
       {isModalOpen && (
         <div className="modal-overlay" onClick={() => setIsModalOpen(false)}>
@@ -581,15 +696,15 @@ const Finance = () => {
                   {modalPeriod === 'PROJECTS' && <HardHat size={20} style={{ color: 'var(--accent-secondary)' }} />}
                   {modalPeriod === 'ALL' && <Filter size={20} className="text-info" />}
                   
-                  {modalPeriod === 'TODAY' && `Chi tiết các khoản đã chi HÔM NAY (${new Date().toLocaleDateString('vi-VN')})`}
-                  {modalPeriod === 'WEEK' && 'Chi tiết các khoản đã chi TUẦN NÀY (Thứ 2 - CN)'}
-                  {modalPeriod === 'MONTH' && `Chi tiết chi tiêu THÁNG ${new Date().getMonth() + 1}/${new Date().getFullYear()}`}
+                  {modalPeriod === 'TODAY' && `Chi tiết Thu - Chi HÔM NAY (${new Date().toLocaleDateString('vi-VN')})`}
+                  {modalPeriod === 'WEEK' && 'Chi tiết Thu - Chi TUẦN NÀY (Thứ 2 - CN)'}
+                  {modalPeriod === 'MONTH' && `Chi tiết Thu - Chi THÁNG ${new Date().getMonth() + 1}/${new Date().getFullYear()}`}
                   {modalPeriod === 'COMPANY' && 'Chi tiết Chi phí Vận hành Công ty'}
                   {modalPeriod === 'PROJECTS' && 'Chi tiết Chi phí Tất cả Công trình / Dự án'}
-                  {modalPeriod === 'ALL' && 'Toàn bộ Lịch sử Chi tiền Hệ thống'}
+                  {modalPeriod === 'ALL' && 'Toàn bộ Lịch sử Thu - Chi Toàn Hệ Thống'}
                 </h3>
                 <p className="text-xs text-secondary mt-1">
-                  Hiển thị nội dung chi tiết: chi mục gì, ở công trình nào, số tiền cụ thể từng khoản.
+                  Hiển thị nội dung chi tiết: mục thu/chi, nguồn phát sinh và số tiền cụ thể từng khoản.
                 </p>
               </div>
               <button 
@@ -604,8 +719,8 @@ const Finance = () => {
             {/* Modal Body */}
             <div className="modal-body">
               
-              {/* Thanh lọc chu kỳ & nguồn */}
-              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              {/* Thanh lọc chu kỳ & tìm kiếm */}
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                 
                 {/* Lọc theo mốc thời gian */}
                 <div className="flex flex-wrap gap-2">
@@ -658,9 +773,34 @@ const Finance = () => {
                 </div>
               </div>
 
-              {/* Lọc nhanh theo Phân hệ nguồn chi */}
+              {/* Lọc theo Loại Thu / Chi */}
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                <span className="text-xs font-bold text-secondary">Phân loại:</span>
+                <button 
+                  className={`filter-pill ${modalTypeFilter === 'ALL' ? 'active' : ''}`}
+                  onClick={() => setModalTypeFilter('ALL')}
+                >
+                  Tất cả thu chi
+                </button>
+                <button 
+                  className={`filter-pill ${modalTypeFilter === 'IN' ? 'active' : ''}`}
+                  onClick={() => setModalTypeFilter('IN')}
+                  style={modalTypeFilter === 'IN' ? { background: 'var(--success)', borderColor: 'var(--success)', color: 'white' } : {}}
+                >
+                  🟢 Tiền vào (Thu)
+                </button>
+                <button 
+                  className={`filter-pill ${modalTypeFilter === 'OUT' ? 'active' : ''}`}
+                  onClick={() => setModalTypeFilter('OUT')}
+                  style={modalTypeFilter === 'OUT' ? { background: 'var(--danger)', borderColor: 'var(--danger)', color: 'white' } : {}}
+                >
+                  🔴 Tiền ra (Chi)
+                </button>
+              </div>
+
+              {/* Lọc nhanh theo Phân hệ nguồn */}
               <div className="flex flex-wrap items-center gap-2 mb-4 pb-3" style={{ borderBottom: '1px solid var(--border-color)' }}>
-                <span className="text-xs font-bold text-secondary">Nguồn chi:</span>
+                <span className="text-xs font-bold text-secondary">Nguồn:</span>
                 <button 
                   className={`filter-pill ${modalSourceFilter === 'ALL' ? 'active' : ''}`}
                   onClick={() => setModalSourceFilter('ALL')}
@@ -689,20 +829,32 @@ const Finance = () => {
 
               {/* Hộp tóm tắt tổng số tiền trong danh sách */}
               <div 
-                className="flex items-center justify-between p-3 rounded-lg mb-4"
-                style={{ background: 'rgba(239, 68, 68, 0.06)', border: '1px solid rgba(239, 68, 68, 0.2)' }}
+                className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3 rounded-lg mb-4"
+                style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}
               >
                 <div>
                   <span className="text-xs text-secondary font-medium">Danh sách hiển thị:</span>
                   <div className="font-bold text-sm">
-                    {filteredModalExpenses.length} khoản chi phí
-                    {modalSearch && <span className="text-secondary text-xs"> (Khớp với từ khóa &ldquo;{modalSearch}&rdquo;)</span>}
+                    {filteredModalItems.length} giao dịch
+                    {modalSearch && <span className="text-secondary text-xs"> (&ldquo;{modalSearch}&rdquo;)</span>}
                   </div>
                 </div>
-                <div className="text-right">
-                  <span className="text-xs text-secondary font-medium">Tổng tiền đã chi:</span>
-                  <div className="text-xl font-bold text-danger">
-                    -{modalTotalSum.toLocaleString('vi-VN')} đ
+                <div>
+                  <span className="text-xs text-secondary font-medium">Tổng Thu (Vào):</span>
+                  <div className="text-base font-bold text-success">
+                    +{modalTotalIn.toLocaleString('vi-VN')} đ
+                  </div>
+                </div>
+                <div>
+                  <span className="text-xs text-secondary font-medium">Tổng Chi (Ra):</span>
+                  <div className="text-base font-bold text-danger">
+                    -{modalTotalOut.toLocaleString('vi-VN')} đ
+                  </div>
+                </div>
+                <div>
+                  <span className="text-xs text-secondary font-medium">Chênh Lệch (Ròng):</span>
+                  <div className={`text-base font-bold ${modalTotalIn - modalTotalOut >= 0 ? 'text-success' : 'text-danger'}`}>
+                    {modalTotalIn - modalTotalOut >= 0 ? '+' : ''}{(modalTotalIn - modalTotalOut).toLocaleString('vi-VN')} đ
                   </div>
                 </div>
               </div>
@@ -714,17 +866,25 @@ const Finance = () => {
                     <tr>
                       <th style={{ width: '45px' }}>STT</th>
                       <th style={{ width: '105px' }}>Ngày</th>
+                      <th style={{ width: '100px' }}>Loại</th>
                       <th style={{ width: '190px' }}>Ở đâu / Công trình</th>
-                      <th style={{ width: '150px' }}>Mục gì (Phân loại)</th>
+                      <th style={{ width: '140px' }}>Phân loại</th>
                       <th>Nội dung chi tiết</th>
                       <th className="text-right" style={{ width: '140px' }}>Số tiền</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredModalExpenses.map((item, idx) => (
+                    {filteredModalItems.map((item, idx) => (
                       <tr key={item.id}>
                         <td className="text-secondary text-xs">{idx + 1}</td>
                         <td className="font-medium text-xs whitespace-nowrap">{item.date}</td>
+                        <td>
+                          {item.type === 'IN' ? (
+                            <span className="badge badge-success text-xs">Tiền Vào</span>
+                          ) : (
+                            <span className="badge badge-danger text-xs">Tiền Ra</span>
+                          )}
+                        </td>
                         <td>
                           {item.sourceLink ? (
                             <Link 
@@ -747,21 +907,21 @@ const Finance = () => {
                         <td>
                           <div className="text-sm font-medium">{item.note}</div>
                         </td>
-                        <td className="text-right font-bold text-danger text-sm whitespace-nowrap">
-                          -{item.amount.toLocaleString('vi-VN')} đ
+                        <td className={`text-right font-bold text-sm whitespace-nowrap ${item.type === 'IN' ? 'text-success' : 'text-danger'}`}>
+                          {item.type === 'IN' ? '+' : '-'}{item.amount.toLocaleString('vi-VN')} đ
                         </td>
                       </tr>
                     ))}
 
-                    {filteredModalExpenses.length === 0 && (
+                    {filteredModalItems.length === 0 && (
                       <tr>
-                        <td colSpan="6" className="text-center py-8">
+                        <td colSpan="7" className="text-center py-8">
                           <div className="flex flex-col items-center justify-center text-secondary">
                             <Clock size={36} className="opacity-40 mb-2" />
                             <div className="font-medium">
                               {modalPeriod === 'TODAY' 
-                                ? `Hôm nay (${new Date().toLocaleDateString('vi-VN')}) chưa phát sinh khoản chi nào.`
-                                : 'Không tìm thấy khoản chi nào phù hợp với bộ lọc.'}
+                                ? `Hôm nay (${new Date().toLocaleDateString('vi-VN')}) chưa phát sinh khoản thu chi nào.`
+                                : 'Không tìm thấy giao dịch nào phù hợp với bộ lọc.'}
                             </div>
                             {modalPeriod === 'TODAY' && countWeek > 0 && (
                               <button 
@@ -769,7 +929,7 @@ const Finance = () => {
                                 className="btn btn-outline text-xs mt-3 text-primary"
                                 style={{ borderColor: 'var(--accent-primary)' }}
                               >
-                                👉 Bấm xem các khoản đã chi trong Tuần này ({countWeek} khoản)
+                                👉 Bấm xem các khoản thu chi trong Tuần này ({countWeek} khoản)
                               </button>
                             )}
                           </div>
@@ -787,7 +947,7 @@ const Finance = () => {
                 *Bạn có thể bấm vào tên công trình để chuyển tới trang sổ quỹ của công trình đó.
               </div>
               <div className="flex items-center gap-2">
-                {filteredModalExpenses.length > 0 && (
+                {filteredModalItems.length > 0 && (
                   <button onClick={exportModalCSV} className="btn btn-outline flex items-center gap-1 text-xs">
                     <Download size={14} /> Xuất Excel (CSV)
                   </button>
