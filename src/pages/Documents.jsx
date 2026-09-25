@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, FileText, Trash2, Download } from 'lucide-react';
+import { Upload, FileText, Trash2, Download, AlertCircle, FileCode, Image, FileArchive } from 'lucide-react';
 import { collection, addDoc, onSnapshot, deleteDoc, doc, query, orderBy } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { db, storage } from '../firebase';
+import { db } from '../firebase';
 import { useAppContext } from '../context/AppContext';
 
 const Documents = () => {
   const { role } = useAppContext();
   const [documents, setDocuments] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
 
   useEffect(() => {
     const q = query(collection(db, 'documents'), orderBy('uploadedAt', 'desc'));
@@ -24,12 +24,13 @@ const Documents = () => {
 
     setIsUploading(true);
     try {
-      // Sử dụng Cloudinary thay cho Firebase Storage
+      // Sử dụng Cloudinary với endpoint auto/upload để hỗ trợ đa dạng định dạng (PDF, DWG, DOCX, ZIP, Ảnh...)
       const formData = new FormData();
       formData.append('file', file);
       formData.append('upload_preset', 't4pe5mv6'); // Preset người dùng cung cấp
+      formData.append('resource_type', 'auto');
 
-      const response = await fetch('https://api.cloudinary.com/v1_1/dcycbg68u/upload', {
+      const response = await fetch('https://api.cloudinary.com/v1_1/dcycbg68u/auto/upload', {
         method: 'POST',
         body: formData
       });
@@ -42,6 +43,7 @@ const Documents = () => {
           url: result.secure_url,
           size: file.size,
           type: file.type || result.format || 'unknown',
+          resourceType: result.resource_type || 'auto',
           uploadedAt: new Date().toISOString()
         });
       } else {
@@ -49,7 +51,7 @@ const Documents = () => {
       }
     } catch (error) {
       console.error("Lỗi upload:", error);
-      alert("Tải lên thất bại!");
+      alert("Tải lên thất bại: " + (error.message || 'Vui lòng kiểm tra lại'));
     } finally {
       setIsUploading(false);
       e.target.value = ''; // reset input
@@ -60,12 +62,19 @@ const Documents = () => {
     if (window.confirm('Xác nhận xóa tài liệu này?')) {
       try {
         await deleteDoc(doc(db, 'documents', docId));
-        // Lưu ý: File thực tế trên Cloudinary sẽ không bị xóa tự động từ Frontend
-        // Để bảo mật, chỉ có thể xóa file thông qua Cloudinary Dashboard hoặc Backend Server
       } catch (error) {
         console.error("Lỗi xóa:", error);
       }
     }
+  };
+
+  // Tạo URL tải trực tiếp về máy (bằng cờ fl_attachment của Cloudinary)
+  const getDownloadUrl = (url) => {
+    if (!url) return '';
+    if (url.includes('cloudinary.com') && url.includes('/upload/')) {
+      return url.replace('/upload/', '/upload/fl_attachment/');
+    }
+    return url;
   };
 
   const formatSize = (bytes) => {
@@ -76,22 +85,68 @@ const Documents = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  const getFileIcon = (name = '') => {
+    const ext = name.split('.').pop()?.toLowerCase();
+    if (ext === 'dwg') return <FileCode size={18} className="text-warning" />;
+    if (['jpg', 'jpeg', 'png', 'webp', 'svg'].includes(ext)) return <Image size={18} className="text-info" />;
+    if (['zip', 'rar', '7z'].includes(ext)) return <FileArchive size={18} className="text-secondary" />;
+    if (ext === 'pdf') return <FileText size={18} className="text-danger" />;
+    return <FileText size={18} className="text-primary" />;
+  };
+
   return (
     <div className="page-container animate-fade-in">
-      <div className="page-header flex justify-between items-center">
+      <div className="page-header flex flex-wrap justify-between items-center gap-4">
         <div>
           <h1 className="page-title">Tài liệu nội bộ</h1>
-          <p className="page-subtitle">Lưu trữ biểu mẫu, quy trình, hợp đồng mẫu của công ty.</p>
+          <p className="page-subtitle">Lưu trữ biểu mẫu, bản vẽ thiết kế (DWG), quy trình, hợp đồng mẫu của công ty.</p>
         </div>
-        {role === 'ADMIN' && (
-          <div>
+        <div className="flex items-center gap-2">
+          <button 
+            type="button" 
+            onClick={() => setShowGuide(!showGuide)} 
+            className="btn btn-outline text-xs flex items-center gap-1"
+            title="Xem hướng dẫn tải PDF"
+          >
+            <AlertCircle size={14} className="text-warning" /> Hướng dẫn mở khóa file PDF
+          </button>
+
+          {role === 'ADMIN' && (
             <label className="btn btn-primary cursor-pointer">
               <Upload size={16} /> {isUploading ? 'Đang tải...' : 'Tải lên tài liệu'}
               <input type="file" className="hidden" onChange={handleUpload} disabled={isUploading} />
             </label>
-          </div>
-        )}
+          )}
+        </div>
       </div>
+
+      {/* Hộp hướng dẫn mở khóa PDF trên Cloudinary (nếu cần) */}
+      {showGuide && (
+        <div 
+          className="p-4 rounded-lg mb-6 animate-fade-in" 
+          style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.3)' }}
+        >
+          <div className="flex items-start gap-3">
+            <AlertCircle size={20} className="text-warning mt-0.5" />
+            <div>
+              <h4 className="font-bold text-sm text-warning mb-1">Cách xử lý khi file PDF báo lỗi "Không tải được tài liệu PDF":</h4>
+              <p className="text-xs text-secondary leading-relaxed">
+                Mặc định tài khoản Cloudinary khóa tính năng tải/xem file PDF & ZIP vì lý do bảo mật. Để mở khóa (chỉ cần làm 1 lần duy nhất):
+              </p>
+              <ol className="text-xs text-secondary list-decimal list-inside mt-2 space-y-1">
+                <li>Đăng nhập vào Cloudinary Console: <a href="https://cloudinary.com/console" target="_blank" rel="noopener noreferrer" className="text-primary underline font-medium">cloudinary.com/console</a></li>
+                <li>Bấm vào biểu tượng <strong>Cài đặt (Settings - hình bánh răng)</strong> ở góc dưới bên trái.</li>
+                <li>Chọn tab <strong>Security</strong>.</li>
+                <li>Kéo xuống mục <strong>"PDF and ZIP files delivery"</strong> (hoặc Blocked delivery formats).</li>
+                <li>Tích chọn vào ô: <strong>"Allow delivery of PDF and ZIP files"</strong> rồi bấm <strong>Save</strong>.</li>
+              </ol>
+              <p className="text-xs text-success font-medium mt-2">
+                ✓ Sau khi bật tùy chọn trên, tất cả file PDF và bản vẽ sẽ xem và tải về bình thường ngay lập tức!
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
       
       <div className="card">
         <div className="table-container">
@@ -109,19 +164,26 @@ const Documents = () => {
                 <tr key={docItem.id}>
                   <td>
                     <div className="flex items-center gap-2">
-                      <FileText size={18} className="text-primary" />
-                      <span className="font-medium">{docItem.name}</span>
+                      {getFileIcon(docItem.name)}
+                      <span className="font-medium text-sm">{docItem.name}</span>
                     </div>
                   </td>
-                  <td>{formatSize(docItem.size)}</td>
-                  <td>{new Date(docItem.uploadedAt).toLocaleDateString('vi-VN')}</td>
+                  <td className="text-sm">{formatSize(docItem.size)}</td>
+                  <td className="text-sm">{new Date(docItem.uploadedAt).toLocaleDateString('vi-VN')}</td>
                   <td className="text-right">
                     <div className="flex gap-2 justify-end">
-                      <a href={docItem.url} target="_blank" rel="noopener noreferrer" className="btn btn-outline py-1 px-2 text-sm">
-                        <Download size={14} /> Tải về
+                      <a 
+                        href={getDownloadUrl(docItem.url)} 
+                        download={docItem.name}
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="btn btn-outline py-1 px-2.5 text-xs flex items-center gap-1"
+                        title="Tải trực tiếp về máy tính"
+                      >
+                        <Download size={13} /> Tải về
                       </a>
                       {role === 'ADMIN' && (
-                        <button className="icon-btn text-danger" onClick={() => handleDelete(docItem.id)} title="Xóa">
+                        <button className="icon-btn text-danger" onClick={() => handleDelete(docItem.id)} title="Xóa tài liệu">
                           <Trash2 size={16} />
                         </button>
                       )}
