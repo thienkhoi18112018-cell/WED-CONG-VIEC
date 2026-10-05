@@ -1,18 +1,20 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
 import { 
   ArrowLeft, CheckCircle, Edit, Trash2, Camera, Download, 
-  Copy, Printer, FileSpreadsheet, Filter, Search, RotateCcw, X, Check, Calendar 
+  Copy, Printer, FileSpreadsheet, Filter, Search, RotateCcw, X, Check, Calendar, Lock 
 } from 'lucide-react';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../firebase';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import PasswordModal from '../components/PasswordModal';
 
 const ProjectDetail = () => {
   const { id } = useParams();
   const { 
+    role,
     projects, updateProject, 
     addDailyLog, updateDailyLog, removeDailyLog, 
     addTransaction, updateTransaction, removeTransaction 
@@ -21,6 +23,16 @@ const ProjectDetail = () => {
   const project = projects.find(p => p?.id?.toString() === id?.toString());
 
   const [activeTab, setActiveTab] = useState('LOGS');
+
+  // Khóa nhân viên chỉ được xem và nhập Nhật ký
+  useEffect(() => {
+    if (role !== 'ADMIN' && activeTab !== 'LOGS') {
+      setActiveTab('LOGS');
+    }
+  }, [role, activeTab]);
+
+  // State Modal Mật Khẩu Két Sắt cho Thu/Chi
+  const [authModal, setAuthModal] = useState({ isOpen: false, action: null, targetItem: null, title: '', desc: '' });
   
   // State form Nhật ký
   const [editingLogId, setEditingLogId] = useState(null);
@@ -366,6 +378,34 @@ const ProjectDetail = () => {
     }
   };
 
+  const requestEditTrans = (t) => {
+    setAuthModal({
+      isOpen: true,
+      action: 'EDIT_TRANS',
+      targetItem: t,
+      title: 'Xác nhận để Sửa Khoản Thu/Chi',
+      desc: `Nhập mật khẩu két sắt (Nhutvn93) để chỉnh sửa dòng: "${t.note || 'Khoản tiền'}".`
+    });
+  };
+
+  const requestDeleteTrans = (transId) => {
+    setAuthModal({
+      isOpen: true,
+      action: 'DELETE_TRANS',
+      targetItem: transId,
+      title: 'Xác nhận để Xóa Khoản Thu/Chi',
+      desc: 'Khoản tiền này sẽ bị xóa vĩnh viễn khỏi sổ quỹ công trình. Nhập mật khẩu két sắt (Nhutvn93) để xác nhận.'
+    });
+  };
+
+  const handleAuthSuccess = async () => {
+    if (authModal.action === 'EDIT_TRANS' && authModal.targetItem) {
+      startEditTrans(authModal.targetItem);
+    } else if (authModal.action === 'DELETE_TRANS' && authModal.targetItem) {
+      await removeTransaction(project.id, authModal.targetItem);
+    }
+  };
+
   const startEditTrans = (t) => {
     setEditingTransId(t.id);
     setTransDate(t.date);
@@ -440,7 +480,7 @@ const ProjectDetail = () => {
           <ArrowLeft size={16} /> Quay lại
         </Link>
         <div className="flex gap-2">
-          {activeTab === 'FINANCE' && (
+          {activeTab === 'FINANCE' && role === 'ADMIN' && (
             <button onClick={copyForZalo} className="btn btn-outline flex items-center gap-1.5" title="Copy tin nhắn có định dạng đẹp để dán vào Zalo gửi cho thợ hoặc đối tác">
               <Copy size={16} className="text-primary" /> Sao chép gửi Zalo
             </button>
@@ -459,9 +499,17 @@ const ProjectDetail = () => {
             <p className="text-secondary mb-2">
               Phụ trách: <strong>{project.manager}</strong> | Bắt đầu: {project.startDate} | Dự kiến: {project.durationMonths} tháng
             </p>
-            <p className="text-secondary mb-4">
-              Tổng giá trị hợp đồng: <strong>{project.totalValue?.toLocaleString('vi-VN')} VNĐ</strong>
-            </p>
+            {role === 'ADMIN' ? (
+              <p className="text-secondary mb-4">
+                Tổng giá trị hợp đồng: <strong>{project.totalValue?.toLocaleString('vi-VN')} VNĐ</strong>
+              </p>
+            ) : (
+              <p className="text-secondary mb-4 flex items-center gap-1.5 text-xs">
+                <span className="badge badge-secondary flex items-center gap-1" style={{ fontSize: '0.78rem', padding: '0.25rem 0.6rem' }}>
+                  <Lock size={12} /> Giá trị hợp đồng: Bảo mật Quản trị viên
+                </span>
+              </p>
+            )}
             
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
               <div style={{ width: '200px', height: '10px', background: 'var(--border-color)', borderRadius: '5px', overflow: 'hidden' }}>
@@ -604,22 +652,33 @@ const ProjectDetail = () => {
       </div>
 
       {/* Tabs chuyển đổi giữa Nhật ký & Sổ quỹ */}
-      <div className="flex gap-4 mb-6 no-print" style={{ borderBottom: '1px solid var(--border-color)' }}>
-        <button 
-          className={`pb-2 px-4 ${activeTab === 'LOGS' ? 'border-b-2 font-bold' : 'text-secondary'}`} 
-          style={{ borderColor: activeTab === 'LOGS' ? 'var(--accent-primary)' : 'transparent' }}
-          onClick={() => setActiveTab('LOGS')}
-        >
-          Nhật ký thi công
-        </button>
-        <button 
-          className={`pb-2 px-4 ${activeTab === 'FINANCE' ? 'border-b-2 font-bold' : 'text-secondary'}`}
-          style={{ borderColor: activeTab === 'FINANCE' ? 'var(--accent-primary)' : 'transparent' }}
-          onClick={() => setActiveTab('FINANCE')}
-        >
-          Sổ quỹ Thu/Chi
-        </button>
-      </div>
+      {role === 'ADMIN' ? (
+        <div className="flex gap-4 mb-6 no-print" style={{ borderBottom: '1px solid var(--border-color)' }}>
+          <button 
+            className={`pb-2 px-4 ${activeTab === 'LOGS' ? 'border-b-2 font-bold' : 'text-secondary'}`} 
+            style={{ borderColor: activeTab === 'LOGS' ? 'var(--accent-primary)' : 'transparent' }}
+            onClick={() => setActiveTab('LOGS')}
+          >
+            Nhật ký thi công
+          </button>
+          <button 
+            className={`pb-2 px-4 ${activeTab === 'FINANCE' ? 'border-b-2 font-bold' : 'text-secondary'}`}
+            style={{ borderColor: activeTab === 'FINANCE' ? 'var(--accent-primary)' : 'transparent' }}
+            onClick={() => setActiveTab('FINANCE')}
+          >
+            Sổ quỹ Thu/Chi
+          </button>
+        </div>
+      ) : (
+        <div className="flex gap-4 mb-6 no-print" style={{ borderBottom: '1px solid var(--border-color)' }}>
+          <div 
+            className="pb-2 px-4 border-b-2 font-bold text-primary flex items-center gap-1.5"
+            style={{ borderColor: 'var(--accent-primary)' }}
+          >
+            📋 Nhật ký thi công công trình
+          </div>
+        </div>
+      )}
 
       {/* ========================================================= */}
       {/* TAB 1: NHẬT KÝ THI CÔNG */}
@@ -1149,8 +1208,8 @@ const ProjectDetail = () => {
                           </td>
                           <td className="text-right no-print">
                             <div className="flex gap-2 justify-end">
-                              <button onClick={() => startEditTrans(t)} className="icon-btn text-info" title="Sửa"><Edit size={16} /></button>
-                              <button onClick={() => removeTransaction(project.id, t.id)} className="icon-btn text-danger" title="Xóa"><Trash2 size={16} /></button>
+                              <button onClick={() => requestEditTrans(t)} className="icon-btn text-info" title="Sửa (Cần mật khẩu két sắt)"><Edit size={16} /></button>
+                              <button onClick={() => requestDeleteTrans(t.id)} className="icon-btn text-danger" title="Xóa (Cần mật khẩu két sắt)"><Trash2 size={16} /></button>
                             </div>
                           </td>
                         </tr>
@@ -1181,6 +1240,15 @@ const ProjectDetail = () => {
           </div>
         </div>
       )}
+
+      {/* Modal Mật Khẩu Két Sắt */}
+      <PasswordModal 
+        isOpen={authModal.isOpen}
+        onClose={() => setAuthModal({ ...authModal, isOpen: false })}
+        onSuccess={handleAuthSuccess}
+        title={authModal.title}
+        description={authModal.desc}
+      />
     </div>
   );
 };

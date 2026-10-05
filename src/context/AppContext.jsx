@@ -8,7 +8,7 @@ const AppContext = createContext();
 
 export const AppProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [role, setRole] = useState('ADMIN'); // ADMIN or EMPLOYEE
+  const [role, setRole] = useState(() => localStorage.getItem('user_role') || 'EMPLOYEE'); // ADMIN or EMPLOYEE
   const [theme, setTheme] = useState('light');
   
   const [projects, setProjects] = useState([]);
@@ -57,10 +57,13 @@ export const AppProvider = ({ children }) => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       if (user) {
         setIsAuthenticated(true);
-        // Vì chỉ dùng 1 tài khoản chung, ta mặc định set role là ADMIN
-        setRole('ADMIN');
+        // Kiểm tra trạng thái mở khóa trong phiên, mặc định là EMPLOYEE (Nhân viên)
+        const savedRole = localStorage.getItem('user_role');
+        setRole(savedRole === 'ADMIN' ? 'ADMIN' : 'EMPLOYEE');
       } else {
         setIsAuthenticated(false);
+        setRole('EMPLOYEE');
+        localStorage.removeItem('user_role');
       }
     });
 
@@ -76,16 +79,36 @@ export const AppProvider = ({ children }) => {
 
   const logout = async () => {
     try {
+      localStorage.removeItem('user_role');
+      setRole('EMPLOYEE');
       await signOut(auth);
     } catch (error) {
       console.error("Lỗi đăng xuất: ", error);
     }
   };
 
+  // Mở khóa Quản trị viên bằng mật khẩu két sắt
+  const unlockAdmin = (password) => {
+    if (!password) return false;
+    const clean = password.trim();
+    if (clean === 'Nhutvn93' || clean === 'Nhut93') {
+      setRole('ADMIN');
+      localStorage.setItem('user_role', 'ADMIN');
+      return true;
+    }
+    return false;
+  };
+
+  // Khóa lại về quyền Nhân viên
+  const lockAdmin = () => {
+    setRole('EMPLOYEE');
+    localStorage.setItem('user_role', 'EMPLOYEE');
+  };
+
   const toggleRole = () => {
-    const newRole = role === 'ADMIN' ? 'EMPLOYEE' : 'ADMIN';
-    setRole(newRole);
-    localStorage.setItem('role', newRole);
+    if (role === 'ADMIN') {
+      lockAdmin();
+    }
   };
 
   // --- QUẢN LÝ DỰ ÁN ---
@@ -207,7 +230,7 @@ export const AppProvider = ({ children }) => {
   return (
     <AppContext.Provider value={{ 
       isAuthenticated, logout, 
-      role, toggleRole, 
+      role, toggleRole, unlockAdmin, lockAdmin,
       theme, toggleTheme,
       projects, addProject, updateProject, removeProject,
       addDailyLog, updateDailyLog, removeDailyLog, addTransaction, updateTransaction, removeTransaction,

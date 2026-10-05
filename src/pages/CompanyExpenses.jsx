@@ -1,9 +1,11 @@
 import React, { useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
 import { 
   Building2, Plus, Edit, Trash2, Search, Filter, 
-  Calendar, DollarSign, Wallet, ArrowDownRight, Tag 
+  Calendar, DollarSign, Wallet, ArrowDownRight, Tag, Lock 
 } from 'lucide-react';
+import PasswordModal from '../components/PasswordModal';
 
 const EXPENSE_CATEGORIES = {
   LUONG: { label: 'Trả lương & Thưởng', badge: 'badge-primary', icon: '💼' },
@@ -16,6 +18,9 @@ const EXPENSE_CATEGORIES = {
 
 const CompanyExpenses = () => {
   const { role, companyExpenses, addCompanyExpense, updateCompanyExpense, removeCompanyExpense } = useAppContext();
+
+  // State Modal Mật Khẩu Két Sắt
+  const [authModal, setAuthModal] = useState({ isOpen: false, action: null, targetItem: null, title: '', desc: '' });
 
   // State Form
   const [editingId, setEditingId] = useState(null);
@@ -132,11 +137,53 @@ const CompanyExpenses = () => {
     setNote('');
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm('Bạn có chắc chắn muốn xóa khoản chi này?')) {
-      await removeCompanyExpense(id);
+  const requestEdit = (item) => {
+    setAuthModal({
+      isOpen: true,
+      action: 'EDIT',
+      targetItem: item,
+      title: 'Xác nhận để Sửa Khoản Chi',
+      desc: 'Nhập mật khẩu két sắt (Nhutvn93) để chỉnh sửa khoản chi này.'
+    });
+  };
+
+  const requestDelete = (id) => {
+    setAuthModal({
+      isOpen: true,
+      action: 'DELETE',
+      targetItem: id,
+      title: 'Xác nhận để Xóa Khoản Chi',
+      desc: 'Khoản chi này sẽ bị xóa khỏi sổ quỹ. Nhập mật khẩu két sắt (Nhutvn93) để xác nhận.'
+    });
+  };
+
+  const handleAuthSuccess = async () => {
+    if (authModal.action === 'EDIT' && authModal.targetItem) {
+      handleStartEdit(authModal.targetItem);
+    } else if (authModal.action === 'DELETE' && authModal.targetItem) {
+      await removeCompanyExpense(authModal.targetItem);
     }
   };
+
+  if (role !== 'ADMIN') {
+    return (
+      <div className="page-container flex flex-col items-center justify-center text-center" style={{ minHeight: '60vh' }}>
+        <div 
+          className="flex items-center justify-center rounded-full mb-4"
+          style={{ width: '64px', height: '64px', background: 'rgba(239, 68, 68, 0.1)', color: 'var(--danger)' }}
+        >
+          <Lock size={32} />
+        </div>
+        <h2 className="text-xl font-bold mb-2">Quyền truy cập bị giới hạn</h2>
+        <p className="text-secondary mb-4" style={{ maxWidth: '420px' }}>
+          Mục Chi phí công ty chứa thông tin tài chính bảo mật (tiền lương, mặt bằng...). Chỉ Quản trị viên mới có quyền xem và quản lý.
+        </p>
+        <Link to="/dashboard/construction" className="btn btn-primary">
+          Về Quản lý Thi công
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="page-container animate-fade-in">
@@ -387,16 +434,16 @@ const CompanyExpenses = () => {
                         <td className="text-right">
                           <div className="flex gap-2 justify-end">
                             <button 
-                              onClick={() => handleStartEdit(item)} 
+                              onClick={() => requestEdit(item)} 
                               className="icon-btn text-info" 
-                              title="Sửa"
+                              title="Sửa (Yêu cầu mật khẩu két sắt)"
                             >
                               <Edit size={16} />
                             </button>
                             <button 
-                              onClick={() => handleDelete(item.id)} 
+                              onClick={() => requestDelete(item.id)} 
                               className="icon-btn text-danger" 
-                              title="Xóa"
+                              title="Xóa (Yêu cầu mật khẩu két sắt)"
                             >
                               <Trash2 size={16} />
                             </button>
@@ -418,6 +465,15 @@ const CompanyExpenses = () => {
           </div>
         </div>
       </div>
+
+      {/* Modal Mật Khẩu Két Sắt */}
+      <PasswordModal 
+        isOpen={authModal.isOpen}
+        onClose={() => setAuthModal({ ...authModal, isOpen: false })}
+        onSuccess={handleAuthSuccess}
+        title={authModal.title}
+        description={authModal.desc}
+      />
     </div>
   );
 };

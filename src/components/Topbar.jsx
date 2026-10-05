@@ -1,11 +1,13 @@
-import React from 'react';
-import { Moon, Sun, Bell, UserCircle, LogOut, Menu } from 'lucide-react';
+import React, { useState } from 'react';
+import { Moon, Sun, Bell, UserCircle, LogOut, Menu, Lock, ShieldCheck } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { useNavigate } from 'react-router-dom';
+import PasswordModal from './PasswordModal';
 import './Topbar.css';
 
 const Topbar = ({ toggleSidebar }) => {
-  const { role, toggleRole, theme, toggleTheme, logout } = useAppContext();
+  const { role, unlockAdmin, lockAdmin, theme, toggleTheme, logout } = useAppContext();
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -23,17 +25,44 @@ const Topbar = ({ toggleSidebar }) => {
       </div>
 
       <div className="topbar-right">
-        {/* Role Demo Switcher */}
+        {/* Quản lý quyền: Mở khóa Quản trị viên hoặc Khóa lại về Nhân viên */}
         <div className="role-switcher">
-          <span className="role-label">Mode:</span>
-          <button 
-            className={`badge ${role === 'ADMIN' ? 'badge-danger' : 'badge-info'}`}
-            onClick={toggleRole}
-            title="Nhấn để đổi quyền (Demo)"
-          >
-            {role === 'ADMIN' ? 'Quản trị viên' : 'Nhân viên'}
-          </button>
+          {role === 'ADMIN' ? (
+            <button 
+              className="badge badge-danger flex items-center gap-1.5 cursor-pointer hover:opacity-90"
+              style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem', border: 'none' }}
+              onClick={() => {
+                if (window.confirm('Khóa lại về chế độ Nhân viên (Ẩn tài chính)?')) {
+                  lockAdmin();
+                }
+              }}
+              title="Đang mở quyền Quản trị viên. Bấm để khóa lại về quyền Nhân viên."
+            >
+              <ShieldCheck size={14} />
+              <span>👑 Quản trị viên (Bấm để khóa)</span>
+            </button>
+          ) : (
+            <button 
+              className="btn btn-outline flex items-center gap-1.5 text-xs py-1 px-2.5"
+              style={{ borderColor: 'var(--accent-primary)', color: 'var(--accent-primary)', background: 'rgba(59, 130, 246, 0.08)' }}
+              onClick={() => setIsAuthModalOpen(true)}
+              title="Bấm để mở khóa quyền Quản trị viên (Cần mật khẩu két sắt)"
+            >
+              <Lock size={14} />
+              <span>Mở khóa Admin</span>
+            </button>
+          )}
         </div>
+
+        <PasswordModal 
+          isOpen={isAuthModalOpen}
+          onClose={() => setIsAuthModalOpen(false)}
+          onSuccess={() => {
+            unlockAdmin('Nhutvn93');
+          }}
+          title="Mở khóa Quyền Quản Trị Viên"
+          description="Nhập mật khẩu két sắt để xem toàn bộ tài chính và sổ quỹ."
+        />
 
         <button className="icon-btn" onClick={toggleTheme}>
           {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}

@@ -1,12 +1,16 @@
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
-import { ArrowLeft, CheckCircle, Edit, Trash2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Edit, Trash2, Lock } from 'lucide-react';
+import PasswordModal from '../components/PasswordModal';
 
 const DesignDetail = () => {
   const { id } = useParams();
-  const { designs, updateDesign, addDesignTransaction, updateDesignTransaction, removeDesignTransaction } = useAppContext();
+  const { role, designs, updateDesign, addDesignTransaction, updateDesignTransaction, removeDesignTransaction } = useAppContext();
   const design = designs.find(d => d?.id?.toString() === id?.toString());
+
+  // State Modal Mật Khẩu Két Sắt
+  const [authModal, setAuthModal] = useState({ isOpen: false, action: null, targetItem: null, title: '', desc: '' });
 
   const [editingTransId, setEditingTransId] = useState(null);
   const [transDate, setTransDate] = useState(new Date().toISOString().slice(0,10));
@@ -19,6 +23,34 @@ const DesignDetail = () => {
   const handleComplete = () => {
     if(window.confirm('Xác nhận hồ sơ thiết kế đã hoàn thành 100%?')) {
       updateDesign(design.id, { isCompleted: true, progress: 100, status: 'Hoàn thành' });
+    }
+  };
+
+  const requestEditTrans = (t) => {
+    setAuthModal({
+      isOpen: true,
+      action: 'EDIT_TRANS',
+      targetItem: t,
+      title: 'Xác nhận để Sửa Thu/Chi Thiết Kế',
+      desc: `Nhập mật khẩu két sắt (Nhutvn93) để chỉnh sửa dòng: "${t.note || 'Thu chi'}".`
+    });
+  };
+
+  const requestDeleteTrans = (transId) => {
+    setAuthModal({
+      isOpen: true,
+      action: 'DELETE_TRANS',
+      targetItem: transId,
+      title: 'Xác nhận để Xóa Thu/Chi Thiết Kế',
+      desc: 'Khoản tiền này sẽ bị xóa khỏi hồ sơ thiết kế. Nhập mật khẩu két sắt (Nhutvn93) để xác nhận.'
+    });
+  };
+
+  const handleAuthSuccess = async () => {
+    if (authModal.action === 'EDIT_TRANS' && authModal.targetItem) {
+      startEditTrans(authModal.targetItem);
+    } else if (authModal.action === 'DELETE_TRANS' && authModal.targetItem) {
+      await removeDesignTransaction(design.id, authModal.targetItem);
     }
   };
 
@@ -70,7 +102,15 @@ const DesignDetail = () => {
           <div>
             <h1 className="text-2xl font-bold mb-2">{design.name}</h1>
             <p className="text-secondary mb-2">Kiến trúc sư: {design.manager} | Bắt đầu: {design.startDate} | Dự kiến: {design.durationMonths} tháng</p>
-            <p className="text-secondary mb-4">Tổng giá trị hợp đồng: <strong>{design.totalValue?.toLocaleString('vi-VN')} VNĐ</strong></p>
+            {role === 'ADMIN' ? (
+              <p className="text-secondary mb-4">Tổng giá trị hợp đồng: <strong>{design.totalValue?.toLocaleString('vi-VN')} VNĐ</strong></p>
+            ) : (
+              <p className="text-secondary mb-4 flex items-center gap-1.5 text-xs">
+                <span className="badge badge-secondary flex items-center gap-1" style={{ fontSize: '0.78rem', padding: '0.25rem 0.6rem' }}>
+                  <Lock size={12} /> Giá trị hợp đồng: Bảo mật Quản trị viên
+                </span>
+              </p>
+            )}
             
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <div style={{ width: '200px', height: '10px', background: 'var(--border-color)', borderRadius: '5px', overflow: 'hidden' }}>
@@ -92,91 +132,108 @@ const DesignDetail = () => {
         </div>
       </div>
 
-      <div className="flex flex-col gap-8">
-        <div>
-          <div className="grid md:grid-cols-2 gap-4 mb-4" style={{ maxWidth: '800px' }}>
-            <div className="card bg-primary text-white" style={{ background: 'var(--accent-primary)', color: 'white' }}>
-              <div className="mb-2 opacity-80">Tổng thu (Tiền vào)</div>
-              <div className="text-2xl font-bold">{totalIn.toLocaleString('vi-VN')} VNĐ</div>
+      {role === 'ADMIN' ? (
+        <div className="flex flex-col gap-8">
+          <div>
+            <div className="grid md:grid-cols-2 gap-4 mb-4" style={{ maxWidth: '800px' }}>
+              <div className="card bg-primary text-white" style={{ background: 'var(--accent-primary)', color: 'white' }}>
+                <div className="mb-2 opacity-80">Tổng thu (Tiền vào)</div>
+                <div className="text-2xl font-bold">{totalIn.toLocaleString('vi-VN')} VNĐ</div>
+              </div>
+              <div className="card" style={{ background: 'var(--danger)', color: 'white' }}>
+                <div className="mb-2 opacity-80">Tổng chi (Tiền ra)</div>
+                <div className="text-2xl font-bold">{totalOut.toLocaleString('vi-VN')} VNĐ</div>
+              </div>
             </div>
-            <div className="card" style={{ background: 'var(--danger)', color: 'white' }}>
-              <div className="mb-2 opacity-80">Tổng chi (Tiền ra)</div>
-              <div className="text-2xl font-bold">{totalOut.toLocaleString('vi-VN')} VNĐ</div>
+            
+            <div className="card" style={{ maxWidth: '800px' }}>
+              <h3 className="font-bold mb-4">{editingTransId ? 'Sửa Thu/Chi' : 'Ghi nhận Thu/Chi'}</h3>
+              <form onSubmit={handleAddTrans} className="flex flex-col gap-4">
+                <div className="input-group">
+                  <label className="input-label">Ngày giao dịch</label>
+                  <input type="date" required className="input-field" value={transDate} onChange={e=>setTransDate(e.target.value)} />
+                </div>
+                <div className="input-group">
+                  <label className="input-label">Loại giao dịch</label>
+                  <select className="input-field" value={transType} onChange={e=>setTransType(e.target.value)}>
+                    <option value="IN">Tiền Vào (Khách thanh toán...)</option>
+                    <option value="OUT">Tiền Ra (Mua vật tư, trả thợ...)</option>
+                  </select>
+                </div>
+                <div className="input-group">
+                  <label className="input-label">Số tiền (VNĐ)</label>
+                  <input type="number" min="0" required className="input-field" value={transAmount} onChange={e=>setTransAmount(e.target.value)} placeholder="Nhập số tiền..." />
+                </div>
+                <div className="input-group">
+                  <label className="input-label">Nội dung</label>
+                  <input type="text" required className="input-field" value={transNote} onChange={e=>setTransNote(e.target.value)} placeholder="VD: Khách ứng đợt 1..." />
+                </div>
+                <div className="flex gap-2">
+                  <button type="submit" className="btn btn-primary w-full justify-center">{editingTransId ? 'Lưu chỉnh sửa' : 'Thêm mới'}</button>
+                  {editingTransId && <button type="button" className="btn btn-outline" onClick={cancelEditTrans}>Hủy</button>}
+                </div>
+              </form>
             </div>
           </div>
           
-          <div className="card" style={{ maxWidth: '800px' }}>
-            <h3 className="font-bold mb-4">{editingTransId ? 'Sửa Thu/Chi' : 'Ghi nhận Thu/Chi'}</h3>
-            <form onSubmit={handleAddTrans} className="flex flex-col gap-4">
-              <div className="input-group">
-                <label className="input-label">Ngày giao dịch</label>
-                <input type="date" required className="input-field" value={transDate} onChange={e=>setTransDate(e.target.value)} />
-              </div>
-              <div className="input-group">
-                <label className="input-label">Loại giao dịch</label>
-                <select className="input-field" value={transType} onChange={e=>setTransType(e.target.value)}>
-                  <option value="IN">Tiền Vào (Khách thanh toán...)</option>
-                  <option value="OUT">Tiền Ra (Mua vật tư, trả thợ...)</option>
-                </select>
-              </div>
-              <div className="input-group">
-                <label className="input-label">Số tiền (VNĐ)</label>
-                <input type="number" min="0" required className="input-field" value={transAmount} onChange={e=>setTransAmount(e.target.value)} placeholder="Nhập số tiền..." />
-              </div>
-              <div className="input-group">
-                <label className="input-label">Nội dung</label>
-                <input type="text" required className="input-field" value={transNote} onChange={e=>setTransNote(e.target.value)} placeholder="VD: Khách ứng đợt 1..." />
-              </div>
-              <div className="flex gap-2">
-                <button type="submit" className="btn btn-primary w-full justify-center">{editingTransId ? 'Lưu chỉnh sửa' : 'Thêm mới'}</button>
-                {editingTransId && <button type="button" className="btn btn-outline" onClick={cancelEditTrans}>Hủy</button>}
-              </div>
-            </form>
-          </div>
-        </div>
-        
-        <div>
-          <div className="card w-full">
-            <h3 className="font-bold mb-4">Lịch sử giao dịch</h3>
-            <div className="table-container">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Ngày</th>
-                    <th>Loại</th>
-                    <th>Nội dung</th>
-                    <th className="text-right">Số tiền</th>
-                    <th className="text-right">Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[...(design.transactions || [])].sort((a,b) => new Date(b.date) - new Date(a.date)).map(t => (
-                    <tr key={t.id} style={{ background: editingTransId === t.id ? 'var(--bg-secondary)' : 'transparent' }}>
-                      <td>{t.date}</td>
-                      <td>
-                        {t.type === 'IN' ? <span className="badge badge-success">Tiền Vào</span> : <span className="badge badge-danger">Tiền Ra</span>}
-                      </td>
-                      <td>{t.note}</td>
-                      <td className="text-right font-bold" style={{ color: t.type === 'IN' ? 'var(--success)' : 'var(--danger)' }}>
-                        {t.type === 'IN' ? '+' : '-'}{t.amount.toLocaleString('vi-VN')}
-                      </td>
-                      <td className="text-right">
-                        <div className="flex gap-2 justify-end">
-                          <button onClick={() => startEditTrans(t)} className="icon-btn text-info" title="Sửa"><Edit size={16} /></button>
-                          <button onClick={() => removeDesignTransaction(design.id, t.id)} className="icon-btn text-danger" title="Xóa"><Trash2 size={16} /></button>
-                        </div>
-                      </td>
+          <div>
+            <div className="card w-full">
+              <h3 className="font-bold mb-4">Lịch sử giao dịch</h3>
+              <div className="table-container">
+                <table className="table" style={{ minWidth: '600px' }}>
+                  <thead>
+                    <tr>
+                      <th>Ngày</th>
+                      <th>Loại</th>
+                      <th>Nội dung</th>
+                      <th className="text-right">Số tiền</th>
+                      <th className="text-right">Thao tác</th>
                     </tr>
-                  ))}
-                  {(design.transactions || []).length === 0 && (
-                    <tr><td colSpan="5" className="text-center text-secondary py-4">Chưa có giao dịch nào.</td></tr>
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {[...(design.transactions || [])].sort((a,b) => new Date(b.date) - new Date(a.date)).map(t => (
+                      <tr key={t.id} style={{ background: editingTransId === t.id ? 'var(--bg-secondary)' : 'transparent' }}>
+                        <td>{t.date}</td>
+                        <td>
+                          {t.type === 'IN' ? <span className="badge badge-success">Tiền Vào</span> : <span className="badge badge-danger">Tiền Ra</span>}
+                        </td>
+                        <td>{t.note}</td>
+                        <td className="text-right font-bold" style={{ color: t.type === 'IN' ? 'var(--success)' : 'var(--danger)' }}>
+                          {t.type === 'IN' ? '+' : '-'}{t.amount.toLocaleString('vi-VN')}
+                        </td>
+                        <td className="text-right">
+                          <div className="flex gap-2 justify-end">
+                            <button onClick={() => requestEditTrans(t)} className="icon-btn text-info" title="Sửa (Cần mật khẩu két sắt)"><Edit size={16} /></button>
+                            <button onClick={() => requestDeleteTrans(t.id)} className="icon-btn text-danger" title="Xóa (Cần mật khẩu két sắt)"><Trash2 size={16} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {(design.transactions || []).length === 0 && (
+                      <tr><td colSpan="5" className="text-center text-secondary py-4">Chưa có giao dịch nào.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="card text-center py-8 text-secondary">
+          <Lock size={32} className="opacity-40 mb-2 mx-auto" />
+          <div className="font-semibold">Dữ liệu tài chính hồ sơ thiết kế được bảo mật</div>
+          <p className="text-xs mt-1">Chỉ Quản trị viên mới có quyền xem và ghi nhận các khoản thu chi thiết kế.</p>
+        </div>
+      )}
+
+      {/* Modal Mật Khẩu Két Sắt */}
+      <PasswordModal 
+        isOpen={authModal.isOpen}
+        onClose={() => setAuthModal({ ...authModal, isOpen: false })}
+        onSuccess={handleAuthSuccess}
+        title={authModal.title}
+        description={authModal.desc}
+      />
     </div>
   );
 };

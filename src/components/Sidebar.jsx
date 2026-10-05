@@ -45,12 +45,14 @@ const Sidebar = ({ isOpen, closeSidebar }) => {
               <span>Tài liệu nội bộ</span>
             </NavLink>
           </li>
-          <li>
-            <NavLink to="/dashboard/company-expenses" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
-              <Building2 size={20} />
-              <span>Chi phí công ty</span>
-            </NavLink>
-          </li>
+          {role === 'ADMIN' && (
+            <li>
+              <NavLink to="/dashboard/company-expenses" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+                <Building2 size={20} />
+                <span>Chi phí công ty</span>
+              </NavLink>
+            </li>
+          )}
           
           {role === 'ADMIN' && (
             <li>
