@@ -4,7 +4,8 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { useAppContext } from '../context/AppContext';
 import { 
   Lock, TrendingUp, TrendingDown, DollarSign, Calendar, Clock, 
-  Building2, HardHat, X, Search, ExternalLink, Download, Eye, Filter 
+  Building2, HardHat, X, Search, ExternalLink, Download, Eye, Filter,
+  LayoutList, Table as TableIcon 
 } from 'lucide-react';
 
 const PROJECT_EXPENSE_CATEGORIES = {
@@ -32,6 +33,12 @@ const Finance = () => {
   const [modalSourceFilter, setModalSourceFilter] = useState('ALL'); // 'ALL' | 'CONSTRUCTION' | 'DESIGN' | 'COMPANY'
   const [modalTypeFilter, setModalTypeFilter] = useState('ALL'); // 'ALL' | 'IN' | 'OUT'
   const [modalSearch, setModalSearch] = useState('');
+  const [modalViewMode, setModalViewMode] = useState(() => {
+    if (typeof window !== 'undefined' && window.innerWidth <= 768) {
+      return 'cards';
+    }
+    return 'table';
+  });
 
   // Tổng hợp dữ liệu
   const { 
@@ -829,11 +836,11 @@ const Finance = () => {
 
               {/* Hộp tóm tắt tổng số tiền trong danh sách */}
               <div 
-                className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3 rounded-lg mb-4"
+                className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 p-3 rounded-lg mb-3"
                 style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}
               >
                 <div>
-                  <span className="text-xs text-secondary font-medium">Danh sách hiển thị:</span>
+                  <span className="text-xs text-secondary font-medium">Danh sách:</span>
                   <div className="font-bold text-sm">
                     {filteredModalItems.length} giao dịch
                     {modalSearch && <span className="text-secondary text-xs"> (&ldquo;{modalSearch}&rdquo;)</span>}
@@ -841,104 +848,241 @@ const Finance = () => {
                 </div>
                 <div>
                   <span className="text-xs text-secondary font-medium">Tổng Thu (Vào):</span>
-                  <div className="text-base font-bold text-success">
+                  <div className="text-sm sm:text-base font-bold text-success">
                     +{modalTotalIn.toLocaleString('vi-VN')} đ
                   </div>
                 </div>
                 <div>
                   <span className="text-xs text-secondary font-medium">Tổng Chi (Ra):</span>
-                  <div className="text-base font-bold text-danger">
+                  <div className="text-sm sm:text-base font-bold text-danger">
                     -{modalTotalOut.toLocaleString('vi-VN')} đ
                   </div>
                 </div>
                 <div>
                   <span className="text-xs text-secondary font-medium">Chênh Lệch (Ròng):</span>
-                  <div className={`text-base font-bold ${modalTotalIn - modalTotalOut >= 0 ? 'text-success' : 'text-danger'}`}>
+                  <div className={`text-sm sm:text-base font-bold ${modalTotalIn - modalTotalOut >= 0 ? 'text-success' : 'text-danger'}`}>
                     {modalTotalIn - modalTotalOut >= 0 ? '+' : ''}{(modalTotalIn - modalTotalOut).toLocaleString('vi-VN')} đ
                   </div>
                 </div>
               </div>
 
-              {/* Bảng danh sách chi tiết */}
-              <div className="table-container" style={{ maxHeight: '420px', overflowY: 'auto' }}>
-                <table className="table">
-                  <thead style={{ position: 'sticky', top: 0, zIndex: 2, background: 'var(--bg-secondary)' }}>
-                    <tr>
-                      <th style={{ width: '45px' }}>STT</th>
-                      <th style={{ width: '105px' }}>Ngày</th>
-                      <th style={{ width: '100px' }}>Loại</th>
-                      <th style={{ width: '190px' }}>Ở đâu / Công trình</th>
-                      <th style={{ width: '140px' }}>Phân loại</th>
-                      <th>Nội dung chi tiết</th>
-                      <th className="text-right" style={{ width: '140px' }}>Số tiền</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredModalItems.map((item, idx) => (
-                      <tr key={item.id}>
-                        <td className="text-secondary text-xs">{idx + 1}</td>
-                        <td className="font-medium text-xs whitespace-nowrap">{item.date}</td>
-                        <td>
-                          {item.type === 'IN' ? (
-                            <span className="badge badge-success text-xs">Tiền Vào</span>
-                          ) : (
-                            <span className="badge badge-danger text-xs">Tiền Ra</span>
-                          )}
-                        </td>
-                        <td>
-                          {item.sourceLink ? (
-                            <Link 
-                              to={item.sourceLink} 
-                              className="font-bold text-primary hover:underline flex items-center gap-1 text-sm"
-                              onClick={() => setIsModalOpen(false)}
-                            >
-                              {item.sourceName} <ExternalLink size={12} className="opacity-60" />
-                            </Link>
-                          ) : (
-                            <span className="font-bold text-sm">{item.sourceName}</span>
-                          )}
-                          <div className="text-xs text-secondary mt-0.5">{item.sourceTypeName}</div>
-                        </td>
-                        <td>
+              {/* Thanh chuyển đổi Chế độ Xem & Gợi ý */}
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <div className="text-xs text-secondary font-medium">
+                  {modalViewMode === 'cards' ? (
+                    <span className="text-primary font-semibold flex items-center gap-1">
+                      📱 Dạng thẻ: Nội dung chi tiết chiếm trọn bề ngang, cực dễ đọc trên điện thoại
+                    </span>
+                  ) : (
+                    <span>📊 Dạng bảng chi tiết (cột nội dung đã được mở rộng)</span>
+                  )}
+                </div>
+                <div 
+                  className="flex items-center p-0.5 rounded-lg border shrink-0"
+                  style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}
+                >
+                  <button 
+                    type="button"
+                    onClick={() => setModalViewMode('cards')}
+                    className={`flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded transition-all ${
+                      modalViewMode === 'cards' ? 'shadow-sm' : 'text-secondary hover:text-primary'
+                    }`}
+                    style={modalViewMode === 'cards' ? { background: 'var(--accent-primary)', color: 'white' } : {}}
+                    title="Chuyển sang dạng thẻ (Nội dung chi tiết rộng rãi, không bị ngắt dòng)"
+                  >
+                    <LayoutList size={13} />
+                    <span>Dạng Thẻ</span>
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setModalViewMode('table')}
+                    className={`flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded transition-all ${
+                      modalViewMode === 'table' ? 'shadow-sm' : 'text-secondary hover:text-primary'
+                    }`}
+                    style={modalViewMode === 'table' ? { background: 'var(--accent-primary)', color: 'white' } : {}}
+                    title="Chuyển sang dạng bảng truyền thống"
+                  >
+                    <TableIcon size={13} />
+                    <span>Dạng Bảng</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* DẠNG THẺ (TỐI ƯU CỰC KỲ RỘNG RÃI TRÊN ĐIỆN THOẠI) */}
+              {modalViewMode === 'cards' && (
+                <div style={{ maxHeight: '420px', overflowY: 'auto' }} className="space-y-2.5 pr-1">
+                  {filteredModalItems.map((item, idx) => (
+                    <div 
+                      key={item.id}
+                      className="p-3 rounded-lg border transition-shadow"
+                      style={{ 
+                        background: 'var(--bg-secondary)', 
+                        borderColor: 'var(--border-color)',
+                        borderLeft: `4px solid ${item.type === 'IN' ? 'var(--success)' : 'var(--danger)'}`
+                      }}
+                    >
+                      {/* Dòng 1: Nguồn / Tên công trình & Số tiền */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {item.sourceLink ? (
+                              <Link 
+                                to={item.sourceLink} 
+                                className="font-bold text-primary hover:underline flex items-center gap-1 text-sm"
+                                onClick={() => setIsModalOpen(false)}
+                              >
+                                {item.sourceName} <ExternalLink size={12} className="opacity-60" />
+                              </Link>
+                            ) : (
+                              <span className="font-bold text-sm">{item.sourceName}</span>
+                            )}
+                            <span className="text-xs text-secondary">({item.sourceTypeName})</span>
+                          </div>
+                        </div>
+                        <div className={`text-right font-bold text-base whitespace-nowrap ${item.type === 'IN' ? 'text-success' : 'text-danger'}`}>
+                          {item.type === 'IN' ? '+' : '-'}{item.amount.toLocaleString('vi-VN')} đ
+                        </div>
+                      </div>
+
+                      {/* Dòng 2: NỘI DUNG CHI TIẾT - RỘNG RÃI TOÀN BỘ BỀ NGANG, KHÔNG BỊ BÓ HẸP */}
+                      <div 
+                        className="my-2 p-2.5 rounded font-medium text-sm"
+                        style={{ 
+                          background: 'var(--bg-primary)', 
+                          border: '1px solid var(--border-color)',
+                          lineHeight: '1.5',
+                          wordBreak: 'break-word',
+                          color: 'var(--text-primary)'
+                        }}
+                      >
+                        {item.note || <span className="text-secondary italic">Không có ghi chú</span>}
+                      </div>
+
+                      {/* Dòng 3: STT, Ngày, Phân loại, Badge Loại */}
+                      <div className="flex items-center justify-between text-xs text-secondary gap-2 flex-wrap pt-1" style={{ borderTop: '1px dashed var(--border-color)' }}>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-secondary">#{idx + 1}</span>
+                          <span>•</span>
+                          <span>📅 {item.date}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
                           <span className={`badge ${item.categoryBadge}`}>
                             {item.categoryIcon} {item.categoryLabel}
                           </span>
-                        </td>
-                        <td>
-                          <div className="text-sm font-medium">{item.note}</div>
-                        </td>
-                        <td className={`text-right font-bold text-sm whitespace-nowrap ${item.type === 'IN' ? 'text-success' : 'text-danger'}`}>
-                          {item.type === 'IN' ? '+' : '-'}{item.amount.toLocaleString('vi-VN')} đ
-                        </td>
-                      </tr>
-                    ))}
+                          <span className={`badge ${item.type === 'IN' ? 'badge-success' : 'badge-danger'}`}>
+                            {item.type === 'IN' ? 'Tiền Vào' : 'Tiền Ra'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
 
-                    {filteredModalItems.length === 0 && (
+                  {filteredModalItems.length === 0 && (
+                    <div className="text-center py-8">
+                      <div className="flex flex-col items-center justify-center text-secondary">
+                        <Clock size={36} className="opacity-40 mb-2" />
+                        <div className="font-medium">
+                          {modalPeriod === 'TODAY' 
+                            ? `Hôm nay (${new Date().toLocaleDateString('vi-VN')}) chưa phát sinh khoản thu chi nào.`
+                            : 'Không tìm thấy giao dịch nào phù hợp với bộ lọc.'}
+                        </div>
+                        {modalPeriod === 'TODAY' && countWeek > 0 && (
+                          <button 
+                            onClick={() => setModalPeriod('WEEK')} 
+                            className="btn btn-outline text-xs mt-3 text-primary"
+                            style={{ borderColor: 'var(--accent-primary)' }}
+                          >
+                            👉 Bấm xem các khoản thu chi trong Tuần này ({countWeek} khoản)
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* DẠNG BẢNG (ĐÃ MỞ RỘNG CỘT NỘI DUNG CHI TIẾT & HỖ TRỢ KÉO NGANG MƯỢT MÀ) */}
+              {modalViewMode === 'table' && (
+                <div className="table-container" style={{ maxHeight: '420px', overflowY: 'auto' }}>
+                  <table className="table" style={{ minWidth: '780px' }}>
+                    <thead style={{ position: 'sticky', top: 0, zIndex: 2, background: 'var(--bg-secondary)' }}>
                       <tr>
-                        <td colSpan="7" className="text-center py-8">
-                          <div className="flex flex-col items-center justify-center text-secondary">
-                            <Clock size={36} className="opacity-40 mb-2" />
-                            <div className="font-medium">
-                              {modalPeriod === 'TODAY' 
-                                ? `Hôm nay (${new Date().toLocaleDateString('vi-VN')}) chưa phát sinh khoản thu chi nào.`
-                                : 'Không tìm thấy giao dịch nào phù hợp với bộ lọc.'}
-                            </div>
-                            {modalPeriod === 'TODAY' && countWeek > 0 && (
-                              <button 
-                                onClick={() => setModalPeriod('WEEK')} 
-                                className="btn btn-outline text-xs mt-3 text-primary"
-                                style={{ borderColor: 'var(--accent-primary)' }}
-                              >
-                                👉 Bấm xem các khoản thu chi trong Tuần này ({countWeek} khoản)
-                              </button>
-                            )}
-                          </div>
-                        </td>
+                        <th style={{ width: '40px' }}>STT</th>
+                        <th style={{ width: '95px' }}>Ngày</th>
+                        <th style={{ width: '90px' }}>Loại</th>
+                        <th style={{ width: '160px' }}>Ở đâu / Công trình</th>
+                        <th style={{ width: '130px' }}>Phân loại</th>
+                        <th style={{ minWidth: '240px' }}>Nội dung chi tiết</th>
+                        <th className="text-right" style={{ width: '130px' }}>Số tiền</th>
                       </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {filteredModalItems.map((item, idx) => (
+                        <tr key={item.id}>
+                          <td className="text-secondary text-xs">{idx + 1}</td>
+                          <td className="font-medium text-xs whitespace-nowrap">{item.date}</td>
+                          <td>
+                            {item.type === 'IN' ? (
+                              <span className="badge badge-success text-xs">Tiền Vào</span>
+                            ) : (
+                              <span className="badge badge-danger text-xs">Tiền Ra</span>
+                            )}
+                          </td>
+                          <td>
+                            {item.sourceLink ? (
+                              <Link 
+                                to={item.sourceLink} 
+                                className="font-bold text-primary hover:underline flex items-center gap-1 text-sm"
+                                onClick={() => setIsModalOpen(false)}
+                              >
+                                {item.sourceName} <ExternalLink size={12} className="opacity-60" />
+                              </Link>
+                            ) : (
+                              <span className="font-bold text-sm">{item.sourceName}</span>
+                            )}
+                            <div className="text-xs text-secondary mt-0.5">{item.sourceTypeName}</div>
+                          </td>
+                          <td>
+                            <span className={`badge ${item.categoryBadge}`}>
+                              {item.categoryIcon} {item.categoryLabel}
+                            </span>
+                          </td>
+                          <td style={{ minWidth: '240px' }}>
+                            <div className="text-sm font-medium" style={{ lineHeight: '1.45' }}>{item.note}</div>
+                          </td>
+                          <td className={`text-right font-bold text-sm whitespace-nowrap ${item.type === 'IN' ? 'text-success' : 'text-danger'}`}>
+                            {item.type === 'IN' ? '+' : '-'}{item.amount.toLocaleString('vi-VN')} đ
+                          </td>
+                        </tr>
+                      ))}
+
+                      {filteredModalItems.length === 0 && (
+                        <tr>
+                          <td colSpan="7" className="text-center py-8">
+                            <div className="flex flex-col items-center justify-center text-secondary">
+                              <Clock size={36} className="opacity-40 mb-2" />
+                              <div className="font-medium">
+                                {modalPeriod === 'TODAY' 
+                                  ? `Hôm nay (${new Date().toLocaleDateString('vi-VN')}) chưa phát sinh khoản thu chi nào.`
+                                  : 'Không tìm thấy giao dịch nào phù hợp với bộ lọc.'}
+                              </div>
+                              {modalPeriod === 'TODAY' && countWeek > 0 && (
+                                <button 
+                                  onClick={() => setModalPeriod('WEEK')} 
+                                  className="btn btn-outline text-xs mt-3 text-primary"
+                                  style={{ borderColor: 'var(--accent-primary)' }}
+                                >
+                                  👉 Bấm xem các khoản thu chi trong Tuần này ({countWeek} khoản)
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
             {/* Modal Footer */}

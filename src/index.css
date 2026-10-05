@@ -223,6 +223,7 @@ ul {
 .table-container {
   width: 100%;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .table {
@@ -349,6 +350,30 @@ ul {
   align-items: center;
   justify-content: space-between;
   background: var(--bg-secondary);
+}
+
+@media (max-width: 640px) {
+  .modal-overlay {
+    padding: 0.5rem;
+  }
+  .modal-content {
+    max-height: 96vh;
+    border-radius: var(--radius-lg);
+  }
+  .modal-header {
+    padding: 0.85rem 1rem;
+  }
+  .modal-body {
+    padding: 0.85rem 0.65rem;
+  }
+  .modal-footer {
+    padding: 0.75rem 1rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .table th, .table td {
+    padding: 0.6rem 0.65rem;
+  }
 }
 
 /* Filter pills */

@@ -1112,14 +1112,14 @@ const ProjectDetail = () => {
 
               {/* BẢNG DỮ LIỆU GIAO DỊCH */}
               <div className="table-container">
-                <table className="table">
+                <table className="table" style={{ minWidth: '780px' }}>
                   <thead>
                     <tr>
                       <th style={{ width: '45px' }}>STT</th>
                       <th style={{ width: '105px' }}>Ngày</th>
                       <th style={{ width: '90px' }}>Loại</th>
                       <th style={{ width: '140px' }}>Phân loại</th>
-                      <th>Nội dung</th>
+                      <th style={{ minWidth: '220px' }}>Nội dung</th>
                       <th className="text-right" style={{ width: '140px' }}>Số tiền</th>
                       <th className="text-right no-print" style={{ width: '90px' }}>Thao tác</th>
                     </tr>
@@ -1143,7 +1143,7 @@ const ProjectDetail = () => {
                               </span>
                             )}
                           </td>
-                          <td className="text-sm font-medium">{t.note}</td>
+                          <td className="text-sm font-medium" style={{ minWidth: '220px', lineHeight: '1.45' }}>{t.note}</td>
                           <td className="text-right font-bold text-sm" style={{ color: t.type === 'IN' ? 'var(--success)' : 'var(--danger)' }}>
                             {t.type === 'IN' ? '+' : '-'}{t.amount.toLocaleString('vi-VN')} đ
                           </td>
