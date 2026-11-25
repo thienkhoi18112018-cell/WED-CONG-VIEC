@@ -1,8 +1,15 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
-import { HardHat, DollarSign, PenTool, FileText } from 'lucide-react';
+import { HardHat, DollarSign, PenTool, FileText, Calendar } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAppContext } from '../context/AppContext';
+import {
+  YEAR_FILTER_OPTIONS,
+  getProjectYear,
+  getYearFromDate,
+  matchesYearFilter,
+  getYearFilterLabel
+} from '../utils/yearHelpers';
 
 const StatCard = ({ title, value, icon, subtitle, delay = 0 }) => (
   <motion.div 
@@ -30,20 +37,24 @@ const StatCard = ({ title, value, icon, subtitle, delay = 0 }) => (
 
 const Dashboard = () => {
   const { role, projects, designs } = useAppContext();
+  const [selectedYear, setSelectedYear] = useState('ALL');
 
   const { totalRevenue, chartData } = useMemo(() => {
     let revenue = 0;
-    const currentYear = new Date().getFullYear();
     const months = Array.from({length: 12}, (_, i) => ({ name: `T${i+1}`, thu: 0, chi: 0 }));
 
-    const processTrans = (transactions) => {
+    const processTrans = (transactions = []) => {
       transactions.forEach(t => {
-        if (t.type === 'IN') revenue += t.amount;
-        const date = new Date(t.date);
-        if (date.getFullYear() === currentYear) {
-          const mIndex = date.getMonth();
-          if (t.type === 'IN') months[mIndex].thu += t.amount;
-          if (t.type === 'OUT') months[mIndex].chi += t.amount;
+        const transYear = getYearFromDate(t.date);
+        if (!matchesYearFilter(transYear, selectedYear)) return;
+        if (t.type === 'IN') revenue += (Number(t.amount) || 0);
+        if (t.date) {
+          const date = new Date(t.date);
+          if (!Number.isNaN(date.getTime())) {
+            const mIndex = date.getMonth();
+            if (t.type === 'IN') months[mIndex].thu += (Number(t.amount) || 0);
+            if (t.type === 'OUT') months[mIndex].chi += (Number(t.amount) || 0);
+          }
         }
       });
     };
@@ -52,24 +63,50 @@ const Dashboard = () => {
     designs.forEach(d => processTrans(d.transactions));
 
     return { totalRevenue: revenue, chartData: months };
-  }, [projects, designs]);
+  }, [projects, designs, selectedYear]);
 
-  const activeProjectsCount = projects.filter(p => !p.isCompleted).length;
-  const activeDesignsCount = designs.filter(d => !d.isCompleted).length;
+  const yearProjects = useMemo(
+    () => projects.filter(p => matchesYearFilter(getProjectYear(p), selectedYear)),
+    [projects, selectedYear]
+  );
+  const yearDesigns = useMemo(
+    () => designs.filter(d => matchesYearFilter(getProjectYear(d), selectedYear)),
+    [designs, selectedYear]
+  );
+
+  const activeProjectsCount = yearProjects.filter(p => !p.isCompleted).length;
+  const activeDesignsCount = yearDesigns.filter(d => !d.isCompleted).length;
 
   return (
     <div className="page-container">
       <motion.div 
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
-        className="page-header">
-        <h1 className="page-title">Tổng quan hệ thống</h1>
-        <p className="page-subtitle">Xem tóm tắt tình hình hoạt động của công ty.</p>
+        className="page-header flex flex-wrap justify-between items-center gap-4">
+        <div>
+          <h1 className="page-title">Tổng quan hệ thống</h1>
+          <p className="page-subtitle">Xem tóm tắt tình hình hoạt động của công ty.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-bold text-secondary flex items-center gap-1">
+            <Calendar size={14} /> Năm:
+          </span>
+          {YEAR_FILTER_OPTIONS.map((opt) => (
+            <button
+              key={opt.key}
+              type="button"
+              onClick={() => setSelectedYear(opt.key)}
+              className={`filter-pill ${selectedYear === opt.key ? 'active' : ''}`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </motion.div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        <StatCard delay={0.1} title="Dự án đang thi công" value={activeProjectsCount} icon={<HardHat size={20} />} subtitle={`Tổng cộng: ${projects.length} dự án`} />
-        <StatCard delay={0.2} title="Hồ sơ thiết kế" value={activeDesignsCount} icon={<PenTool size={20} />} subtitle={`Tổng cộng: ${designs.length} hồ sơ`} />
+        <StatCard delay={0.1} title="Dự án đang thi công" value={activeProjectsCount} icon={<HardHat size={20} />} subtitle={`Tổng cộng: ${yearProjects.length} dự án`} />
+        <StatCard delay={0.2} title="Hồ sơ thiết kế" value={activeDesignsCount} icon={<PenTool size={20} />} subtitle={`Tổng cộng: ${yearDesigns.length} hồ sơ`} />
         <StatCard delay={0.3} title="Nhân sự / Tài liệu" value="24" icon={<FileText size={20} />} subtitle="Tài liệu nội bộ" />
         
         {role === 'ADMIN' ? (
@@ -78,7 +115,7 @@ const Dashboard = () => {
             title="Tổng doanh thu (Đã thu)" 
             value={`${(totalRevenue / 1000000000).toFixed(2)} Tỷ`} 
             icon={<DollarSign size={20} />} 
-            subtitle="Toàn thời gian" 
+            subtitle={getYearFilterLabel(selectedYear)} 
           />
         ) : (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }} className="card flex items-center justify-center">
@@ -93,7 +130,7 @@ const Dashboard = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5, duration: 0.5 }}
           className="card mb-8">
-          <h3 className="mb-4 font-bold">Biểu đồ Thu/Chi năm {new Date().getFullYear()} (Triệu VNĐ)</h3>
+          <h3 className="mb-4 font-bold">Biểu đồ Thu/Chi - {getYearFilterLabel(selectedYear)} (Triệu VNĐ)</h3>
           <div style={{ width: '100%', height: 350 }}>
             <ResponsiveContainer>
               <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>

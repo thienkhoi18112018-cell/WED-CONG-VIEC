@@ -1,35 +1,66 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, X, Edit, Trash2, AlertTriangle } from 'lucide-react';
+import { Plus, X, Edit, Trash2, AlertTriangle, Calendar } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import {
+  YEAR_FILTER_OPTIONS,
+  getProjectYear,
+  getYearFromDate,
+  matchesYearFilter,
+  getYearFilterLabel
+} from '../utils/yearHelpers';
 
 const Design = () => {
   const { designs, addDesign, updateDesign, removeDesign } = useAppContext();
   
+  const [yearFilter, setYearFilter] = useState('ALL');
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState({
-    name: '', manager: '', status: 'Chờ duyệt', progress: 0, startDate: '', durationMonths: 1, totalValue: 0
+    name: '', manager: '', status: 'Chờ duyệt', progress: 0, startDate: '', durationMonths: 1, totalValue: 0, year: new Date().getFullYear()
   });
+
+  const yearCounts = useMemo(() => {
+    const counts = { ALL: designs.length, '2026': 0, '2027': 0, OTHER: 0 };
+    designs.forEach((d) => {
+      const y = getProjectYear(d);
+      if (y === 2026) counts['2026'] += 1;
+      else if (y === 2027) counts['2027'] += 1;
+      else counts.OTHER += 1;
+    });
+    return counts;
+  }, [designs]);
+
+  const filteredDesigns = useMemo(() => {
+    return designs.filter((d) => matchesYearFilter(getProjectYear(d), yearFilter));
+  }, [designs, yearFilter]);
 
   const openModal = (design = null) => {
     if (design) {
       setEditingId(design.id);
-      setFormData(design);
+      setFormData({
+        ...design,
+        totalValue: design.totalValue || 0,
+        year: getProjectYear(design) || new Date().getFullYear()
+      });
     } else {
+      const today = new Date().toISOString().slice(0, 10);
+      const defaultYear = yearFilter === '2026' ? 2026 : yearFilter === '2027' ? 2027 : new Date().getFullYear();
       setEditingId(null);
-      setFormData({ name: '', manager: '', status: 'Chờ duyệt', progress: 0, startDate: new Date().toISOString().slice(0,10), durationMonths: 1, totalValue: 0 });
+      setFormData({ name: '', manager: '', status: 'Chờ duyệt', progress: 0, startDate: today, durationMonths: 1, totalValue: 0, year: defaultYear });
     }
     setShowModal(true);
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    const resolvedYear = parseInt(formData.year, 10) || getYearFromDate(formData.startDate) || new Date().getFullYear();
     const data = { 
       ...formData, 
-      progress: parseInt(formData.progress) || 0, 
-      durationMonths: parseInt(formData.durationMonths) || 1,
-      totalValue: parseInt(formData.totalValue) || 0
+      progress: parseInt(formData.progress, 10) || 0, 
+      durationMonths: parseInt(formData.durationMonths, 10) || 1,
+      totalValue: parseInt(formData.totalValue, 10) || 0,
+      year: resolvedYear
     };
     
     if (editingId) {
@@ -69,13 +100,33 @@ const Design = () => {
         </div>
       </div>
 
+      {/* Bộ lọc phân loại hồ sơ thiết kế theo năm */}
+      <div className="flex flex-wrap items-center gap-2 mb-6">
+        <span className="text-xs font-bold text-secondary flex items-center gap-1 mr-1">
+          <Calendar size={14} /> Phân loại năm:
+        </span>
+        {YEAR_FILTER_OPTIONS.map((opt) => (
+          <button
+            key={opt.key}
+            type="button"
+            onClick={() => setYearFilter(opt.key)}
+            className={`filter-pill ${yearFilter === opt.key ? 'active' : ''}`}
+          >
+            {opt.label} ({yearCounts[opt.key]})
+          </button>
+        ))}
+      </div>
+
       <div className="card" style={{ padding: '2rem' }}>
-        <h2 style={{ marginBottom: '1.5rem', fontWeight: 'bold', fontSize: '1.25rem' }}>Danh Sách Hồ Sơ Thiết Kế</h2>
+        <h2 style={{ marginBottom: '1.5rem', fontWeight: 'bold', fontSize: '1.25rem' }}>
+          Danh Sách Hồ Sơ Thiết Kế - {getYearFilterLabel(yearFilter)}
+        </h2>
         <div className="table-container">
           <table className="table">
             <thead>
               <tr>
                 <th>Mã HS</th>
+                <th>Năm</th>
                 <th>Tên hồ sơ</th>
                 <th>Kiến trúc sư</th>
                 <th>Thời gian</th>
@@ -84,11 +135,17 @@ const Design = () => {
               </tr>
             </thead>
             <tbody>
-              {designs.map((d) => {
+              {filteredDesigns.map((d) => {
                 const isDelayed = checkDelay(d.startDate, d.durationMonths, d.progress, d.isCompleted);
+                const designYear = getProjectYear(d);
                 return (
                   <tr key={d.id}>
                     <td>#{d.id.toString().slice(-4)}</td>
+                    <td>
+                      <span className={`badge ${designYear === 2026 ? 'badge-primary' : designYear === 2027 ? 'badge-info' : 'badge-secondary'}`}>
+                        {designYear || 'Khác'}
+                      </span>
+                    </td>
                     <td style={{ fontWeight: 500 }}>
                       {d.name}
                       {isDelayed && (
@@ -123,9 +180,11 @@ const Design = () => {
                   </tr>
                 );
               })}
-              {designs.length === 0 && (
+              {filteredDesigns.length === 0 && (
                 <tr>
-                  <td colSpan="6" className="text-center" style={{ padding: '2rem', color: 'var(--text-secondary)' }}>Chưa có hồ sơ thiết kế nào.</td>
+                  <td colSpan="7" className="text-center" style={{ padding: '2rem', color: 'var(--text-secondary)' }}>
+                    Không có hồ sơ thiết kế nào thuộc nhóm {getYearFilterLabel(yearFilter).toLowerCase()}.
+                  </td>
                 </tr>
               )}
             </tbody>
@@ -154,17 +213,64 @@ const Design = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div className="input-group">
                   <label className="input-label">Ngày bắt đầu</label>
-                  <input required type="date" className="input-field" value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})} />
+                  <input
+                    required
+                    type="date"
+                    className="input-field"
+                    value={formData.startDate}
+                    onChange={e => {
+                      const val = e.target.value;
+                      const parsedYear = getYearFromDate(val);
+                      setFormData(prev => ({
+                        ...prev,
+                        startDate: val,
+                        year: !editingId && parsedYear ? parsedYear : prev.year
+                      }));
+                    }}
+                  />
                 </div>
+                <div className="input-group">
+                  <label className="input-label">Năm hồ sơ (Phân loại)</label>
+                  <div className="flex gap-2">
+                    <input
+                      required
+                      type="number"
+                      min="2000"
+                      max="2100"
+                      className="input-field"
+                      style={{ flex: 1 }}
+                      value={formData.year}
+                      onChange={e => setFormData({ ...formData, year: e.target.value })}
+                    />
+                    <button
+                      type="button"
+                      className={`btn ${Number(formData.year) === 2026 ? 'btn-primary' : 'btn-outline'}`}
+                      style={{ padding: '0.4rem 0.65rem', fontSize: '0.75rem' }}
+                      onClick={() => setFormData({ ...formData, year: 2026 })}
+                    >
+                      2026
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn ${Number(formData.year) === 2027 ? 'btn-primary' : 'btn-outline'}`}
+                      style={{ padding: '0.4rem 0.65rem', fontSize: '0.75rem' }}
+                      onClick={() => setFormData({ ...formData, year: 2027 })}
+                    >
+                      2027
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
                 <div className="input-group">
                   <label className="input-label">Dự kiến thực hiện (tháng)</label>
                   <input required type="number" min="1" className="input-field" value={formData.durationMonths} onChange={e => setFormData({...formData, durationMonths: e.target.value})} />
                 </div>
-              </div>
-
-              <div className="input-group">
-                <label className="input-label">Tổng giá trị hợp đồng (VNĐ)</label>
-                <input required type="number" min="0" className="input-field" value={formData.totalValue} onChange={e => setFormData({...formData, totalValue: e.target.value})} />
+                <div className="input-group">
+                  <label className="input-label">Tổng giá trị hợp đồng (VNĐ)</label>
+                  <input required type="number" min="0" className="input-field" value={formData.totalValue} onChange={e => setFormData({...formData, totalValue: e.target.value})} />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">

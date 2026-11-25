@@ -3,13 +3,27 @@ import { useParams, Link } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
 import { 
   ArrowLeft, CheckCircle, Edit, Trash2, Camera, Download, 
-  Copy, Printer, FileSpreadsheet, Filter, Search, RotateCcw, X, Check, Calendar, Lock 
+  Copy, Printer, FileSpreadsheet, Filter, Search, RotateCcw, X, Check, Calendar, Lock,
+  ArrowRightLeft, FilePlus2
 } from 'lucide-react';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../firebase';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import PasswordModal from '../components/PasswordModal';
+import {
+  EXPENSE_CATEGORIES,
+  SUB_CONTRACTOR_CATEGORIES,
+  EXPENSE_CATEGORY_LIST,
+  getExpenseCategoryInfo
+} from '../constants/expenseCategories';
+import { getProjectYear } from '../utils/yearHelpers';
+
+const VARIATION_STATUS = {
+  PENDING: { label: 'Chờ duyệt', badge: 'badge-warning' },
+  APPROVED: { label: 'Đã duyệt', badge: 'badge-info' },
+  PAID: { label: 'Đã thanh toán', badge: 'badge-success' }
+};
 
 const ProjectDetail = () => {
   const { id } = useParams();
@@ -17,12 +31,13 @@ const ProjectDetail = () => {
     role,
     projects, updateProject, 
     addDailyLog, updateDailyLog, removeDailyLog, 
-    addTransaction, updateTransaction, removeTransaction 
+    addTransaction, updateTransaction, removeTransaction,
+    addProjectVariation, updateProjectVariation, removeProjectVariation, transferVariationToFinance
   } = useAppContext();
   
   const project = projects.find(p => p?.id?.toString() === id?.toString());
 
-  const [activeTab, setActiveTab] = useState('LOGS');
+  const [activeTab, setActiveTab] = useState('LOGS'); // 'LOGS' | 'EXTRAS' | 'FINANCE'
 
   // Khóa nhân viên chỉ được xem và nhập Nhật ký
   useEffect(() => {
@@ -31,7 +46,7 @@ const ProjectDetail = () => {
     }
   }, [role, activeTab]);
 
-  // State Modal Mật Khẩu Két Sắt cho Thu/Chi
+  // State Modal Mật Khẩu Két Sắt cho Thu/Chi & Phát sinh
   const [authModal, setAuthModal] = useState({ isOpen: false, action: null, targetItem: null, title: '', desc: '' });
   
   // State form Nhật ký
@@ -48,23 +63,40 @@ const ProjectDetail = () => {
   const [editingTransId, setEditingTransId] = useState(null);
   const [transDate, setTransDate] = useState(new Date().toISOString().slice(0, 10));
   const [transType, setTransType] = useState('IN');
-  const [expenseCategory, setExpenseCategory] = useState('THO_XAY'); // 'THO_XAY' | 'THO_KHAC' | 'VAT_TU' | 'KHAC'
+  const [expenseCategory, setExpenseCategory] = useState('THO_XAY');
   const [transAmount, setTransAmount] = useState('');
   const [transNote, setTransNote] = useState('');
 
-  // State Bộ lọc Sổ Quỹ Thu/Chi (Yêu cầu lọc theo phân loại & xuất báo cáo theo từng đội)
-  const [filterCategory, setFilterCategory] = useState('ALL'); // 'ALL' | 'THO_XAY' | 'THO_KHAC' | 'VAT_TU' | 'KHAC' | 'IN'
+  // State Bộ lọc Sổ Quỹ Thu/Chi
+  const [filterCategory, setFilterCategory] = useState('ALL');
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [copyFeedback, setCopyFeedback] = useState('');
 
-  const EXPENSE_CATEGORIES = {
-    THO_XAY: { label: 'Tiền thợ xây', badge: 'badge-primary', icon: '🧱' },
-    THO_KHAC: { label: 'Tiền thợ khác', badge: 'badge-info', icon: '⚡' },
-    VAT_TU: { label: 'Tiền vật tư', badge: 'badge-orange', icon: '🏗️' },
-    KHAC: { label: 'Tiền khác', badge: 'badge-secondary', icon: '📦' }
-  };
+  // State form Nội dung Phát sinh
+  const [editingVarId, setEditingVarId] = useState(null);
+  const [varDate, setVarDate] = useState(new Date().toISOString().slice(0, 10));
+  const [varTitle, setVarTitle] = useState('');
+  const [varType, setVarType] = useState('INCREASE'); // 'INCREASE' | 'DECREASE'
+  const [varAmount, setVarAmount] = useState('');
+  const [varStatus, setVarStatus] = useState('PENDING'); // 'PENDING' | 'APPROVED' | 'PAID'
+  const [varNote, setVarNote] = useState('');
+  const [varFilterStatus, setVarFilterStatus] = useState('ALL');
+  const [varFilterType, setVarFilterType] = useState('ALL');
+  const [varSearch, setVarSearch] = useState('');
+
+  // State Modal chuyển nhanh khoản phát sinh sang Sổ quỹ
+  const [transferModal, setTransferModal] = useState({
+    isOpen: false,
+    variation: null,
+    date: new Date().toISOString().slice(0, 10),
+    type: 'IN',
+    expenseCategory: 'KHAC',
+    amount: '',
+    note: '',
+    markAsPaid: true
+  });
 
   // State xuất PDF
   const [isExporting, setIsExporting] = useState(false);
@@ -97,39 +129,73 @@ const ProjectDetail = () => {
     }
   };
 
-  // Tính toán tổng số liệu gốc
-  const totalIn = (project.transactions || []).filter(t => t.type === 'IN').reduce((sum, t) => sum + t.amount, 0);
-  const totalOut = (project.transactions || []).filter(t => t.type === 'OUT').reduce((sum, t) => sum + t.amount, 0);
+  // Tính toán tổng số liệu Sổ quỹ theo từng phân loại
+  const {
+    totalIn,
+    totalOut,
+    countAll,
+    countIn,
+    countOut,
+    totalsByCategory,
+    countsByCategory,
+    totalSubContractors,
+    countSubContractors
+  } = useMemo(() => {
+    const trans = project?.transactions || [];
+    let tIn = 0;
+    let tOut = 0;
+    let cIn = 0;
+    let cOut = 0;
+    const catTotals = {};
+    const catCounts = {};
+    Object.keys(EXPENSE_CATEGORIES).forEach((k) => {
+      catTotals[k] = 0;
+      catCounts[k] = 0;
+    });
 
-  // Chi tiết từng nhóm chi phí đầu ra
-  const totalThoXay = (project.transactions || []).filter(t => t.type === 'OUT' && t.expenseCategory === 'THO_XAY').reduce((sum, t) => sum + t.amount, 0);
-  const totalThoKhac = (project.transactions || []).filter(t => t.type === 'OUT' && t.expenseCategory === 'THO_KHAC').reduce((sum, t) => sum + t.amount, 0);
-  const totalVatTu = (project.transactions || []).filter(t => t.type === 'OUT' && t.expenseCategory === 'VAT_TU').reduce((sum, t) => sum + t.amount, 0);
-  const totalKhac = (project.transactions || []).filter(t => t.type === 'OUT' && (!t.expenseCategory || t.expenseCategory === 'KHAC')).reduce((sum, t) => sum + t.amount, 0);
+    trans.forEach((t) => {
+      const amt = Number(t.amount) || 0;
+      if (t.type === 'IN') {
+        tIn += amt;
+        cIn += 1;
+      } else if (t.type === 'OUT') {
+        tOut += amt;
+        cOut += 1;
+        const catKey = t.expenseCategory && EXPENSE_CATEGORIES[t.expenseCategory] ? t.expenseCategory : 'KHAC';
+        catTotals[catKey] += amt;
+        catCounts[catKey] += 1;
+      }
+    });
 
-  // Số lượng từng nhóm
-  const countAll = (project.transactions || []).length;
-  const countThoXay = (project.transactions || []).filter(t => t.type === 'OUT' && t.expenseCategory === 'THO_XAY').length;
-  const countThoKhac = (project.transactions || []).filter(t => t.type === 'OUT' && t.expenseCategory === 'THO_KHAC').length;
-  const countVatTu = (project.transactions || []).filter(t => t.type === 'OUT' && t.expenseCategory === 'VAT_TU').length;
-  const countKhac = (project.transactions || []).filter(t => t.type === 'OUT' && (!t.expenseCategory || t.expenseCategory === 'KHAC')).length;
-  const countIn = (project.transactions || []).filter(t => t.type === 'IN').length;
+    const subTotal = SUB_CONTRACTOR_CATEGORIES.reduce((sum, k) => sum + (catTotals[k] || 0), 0);
+    const subCount = SUB_CONTRACTOR_CATEGORIES.reduce((sum, k) => sum + (catCounts[k] || 0), 0);
+
+    return {
+      totalIn: tIn,
+      totalOut: tOut,
+      countAll: trans.length,
+      countIn: cIn,
+      countOut: cOut,
+      totalsByCategory: catTotals,
+      countsByCategory: catCounts,
+      totalSubContractors: subTotal,
+      countSubContractors: subCount
+    };
+  }, [project?.transactions]);
 
   // Lọc danh sách giao dịch theo Phân loại, Thời gian, Từ khóa
   const filteredTransactions = useMemo(() => {
-    return (project.transactions || [])
+    return (project?.transactions || [])
       .filter(t => {
         // 1. Lọc theo Phân loại
         if (filterCategory === 'IN') {
           if (t.type !== 'IN') return false;
-        } else if (filterCategory === 'THO_XAY') {
-          if (t.type !== 'OUT' || t.expenseCategory !== 'THO_XAY') return false;
-        } else if (filterCategory === 'THO_KHAC') {
-          if (t.type !== 'OUT' || t.expenseCategory !== 'THO_KHAC') return false;
-        } else if (filterCategory === 'VAT_TU') {
-          if (t.type !== 'OUT' || t.expenseCategory !== 'VAT_TU') return false;
-        } else if (filterCategory === 'KHAC') {
-          if (t.type !== 'OUT' || (t.expenseCategory && t.expenseCategory !== 'KHAC')) return false;
+        } else if (filterCategory === 'SUB_CONTRACTORS') {
+          const catKey = t.expenseCategory && EXPENSE_CATEGORIES[t.expenseCategory] ? t.expenseCategory : 'KHAC';
+          if (t.type !== 'OUT' || !SUB_CONTRACTOR_CATEGORIES.includes(catKey)) return false;
+        } else if (filterCategory !== 'ALL') {
+          const catKey = t.expenseCategory && EXPENSE_CATEGORIES[t.expenseCategory] ? t.expenseCategory : 'KHAC';
+          if (t.type !== 'OUT' || catKey !== filterCategory) return false;
         }
 
         // 2. Lọc theo ngày bắt đầu
@@ -142,14 +208,64 @@ const ProjectDetail = () => {
           const kw = searchKeyword.toLowerCase();
           const matchNote = (t.note || '').toLowerCase().includes(kw);
           const matchAmount = (t.amount || '').toString().includes(kw);
-          const catLabel = (EXPENSE_CATEGORIES[t.expenseCategory]?.label || '').toLowerCase();
+          const catLabel = getExpenseCategoryInfo(t.expenseCategory).label.toLowerCase();
           return matchNote || matchAmount || catLabel.includes(kw);
         }
 
         return true;
       })
       .sort((a, b) => new Date(b.date) - new Date(a.date));
-  }, [project.transactions, filterCategory, filterStartDate, filterEndDate, searchKeyword]);
+  }, [project?.transactions, filterCategory, filterStartDate, filterEndDate, searchKeyword]);
+
+  // Tính toán thống kê & bộ lọc Nội dung Phát sinh
+  const variationStats = useMemo(() => {
+    const vars = project?.variations || [];
+    let increaseSum = 0;
+    let decreaseSum = 0;
+    let approvedNet = 0;
+    let paidCount = 0;
+
+    vars.forEach((v) => {
+      const amt = Number(v.amount) || 0;
+      if (v.type === 'DECREASE') {
+        decreaseSum += amt;
+        if (v.status === 'APPROVED' || v.status === 'PAID') approvedNet -= amt;
+      } else {
+        increaseSum += amt;
+        if (v.status === 'APPROVED' || v.status === 'PAID') approvedNet += amt;
+      }
+      if (v.status === 'PAID') paidCount += 1;
+    });
+
+    const netSum = increaseSum - decreaseSum;
+    const baseContract = Number(project?.totalValue) || 0;
+    return {
+      totalCount: vars.length,
+      increaseSum,
+      decreaseSum,
+      netSum,
+      approvedNet,
+      paidCount,
+      totalAfterVariations: baseContract + netSum
+    };
+  }, [project?.variations, project?.totalValue]);
+
+  const filteredVariations = useMemo(() => {
+    return (project?.variations || [])
+      .filter((v) => {
+        if (varFilterStatus !== 'ALL' && v.status !== varFilterStatus) return false;
+        if (varFilterType !== 'ALL' && v.type !== varFilterType) return false;
+        if (varSearch.trim()) {
+          const kw = varSearch.toLowerCase();
+          const mTitle = (v.title || '').toLowerCase().includes(kw);
+          const mNote = (v.note || '').toLowerCase().includes(kw);
+          const mAmt = (v.amount || '').toString().includes(kw);
+          return mTitle || mNote || mAmt;
+        }
+        return true;
+      })
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
+  }, [project?.variations, varFilterStatus, varFilterType, varSearch]);
 
   // Tổng tiền của danh sách đang lọc
   const filteredTotal = useMemo(() => {
@@ -196,19 +312,51 @@ const ProjectDetail = () => {
     }
   };
 
-  // Tiêu đề báo cáo tự động theo phân loại đang lọc
+  // Tiêu đề báo cáo tự động theo tab & phân loại đang lọc
   const getReportTitle = () => {
     if (activeTab === 'LOGS') return 'BÁO CÁO NHẬT KÝ THI CÔNG';
-    if (filterCategory === 'THO_XAY') return 'BẢNG KÊ QUYẾT TOÁN & TẠM ỨNG TIỀN THỢ XÂY';
-    if (filterCategory === 'THO_KHAC') return 'BẢNG KÊ CHI PHÍ CÁC ĐỘI THỢ PHỤ TRỢ (ĐIỆN, NƯỚC, SƠN, TRẦN...)';
-    if (filterCategory === 'VAT_TU') return 'BẢNG KÊ CHI TIẾT CUNG CẤP VẬT TƯ CÔNG TRÌNH';
-    if (filterCategory === 'KHAC') return 'BẢNG KÊ CHI TIẾT CÁC KHOẢN CHI PHÍ KHÁC';
+    if (activeTab === 'EXTRAS') return 'BẢNG KÊ NỘI DUNG PHÁT SINH CÔNG TRÌNH';
+    if (filterCategory === 'SUB_CONTRACTORS') return 'BẢNG KÊ CHI PHÍ CÁC ĐỘI THỢ PHỤ TRỢ (ĐIỆN, SƠN, CƠ KHÍ, NHÔM KÍNH, KHÁC)';
     if (filterCategory === 'IN') return 'BẢNG KÊ CÁC ĐỢT KHÁCH HÀNG TẠM ỨNG & THANH TOÁN';
+    if (EXPENSE_CATEGORIES[filterCategory]?.reportTitle) {
+      return EXPENSE_CATEGORIES[filterCategory].reportTitle;
+    }
     return 'BÁO CÁO TỔNG HỢP SỔ QUỸ THU CHI CÔNG TRÌNH';
   };
 
   // 1. Xuất báo cáo sao chép gửi Zalo
   const copyForZalo = () => {
+    if (activeTab === 'EXTRAS') {
+      let text = `📋 BẢNG KÊ NỘI DUNG PHÁT SINH CÔNG TRÌNH\n`;
+      text += `🏗️ Công trình: ${project.name}\n`;
+      if (project.manager) text += `👷 Phụ trách: ${project.manager}\n`;
+      text += `📅 Ngày xuất: ${new Date().toLocaleDateString('vi-VN')}\n`;
+      text += `--------------------------------------\n`;
+
+      if (filteredVariations.length === 0) {
+        text += `(Chưa có nội dung phát sinh phù hợp)\n`;
+      } else {
+        const list = [...filteredVariations].sort((a, b) => new Date(a.date) - new Date(b.date));
+        list.forEach((v, i) => {
+          const sign = v.type === 'DECREASE' ? '-' : '+';
+          const statusLabel = VARIATION_STATUS[v.status]?.label || 'Chờ duyệt';
+          text += `${i + 1}. [${v.date}] ${sign}${(Number(v.amount) || 0).toLocaleString('vi-VN')} đ (${statusLabel})\n`;
+          text += `   • ${v.title}${v.note ? ` — ${v.note}` : ''}\n`;
+        });
+      }
+
+      text += `--------------------------------------\n`;
+      text += `📈 Phát sinh tăng: +${variationStats.increaseSum.toLocaleString('vi-VN')} đ\n`;
+      text += `📉 Phát sinh giảm: -${variationStats.decreaseSum.toLocaleString('vi-VN')} đ\n`;
+      text += `💰 PHÁT SINH RÒNG: ${variationStats.netSum >= 0 ? '+' : ''}${variationStats.netSum.toLocaleString('vi-VN')} đ\n`;
+      text += `(Hệ thống Quản lý Xây dựng HD Cons)`;
+
+      navigator.clipboard.writeText(text);
+      setCopyFeedback('✓ Đã sao chép bảng kê phát sinh! Bạn có thể dán vào Zalo gửi cho khách hàng.');
+      setTimeout(() => setCopyFeedback(''), 4000);
+      return;
+    }
+
     const title = getReportTitle();
     let text = `📋 ${title.toUpperCase()}\n`;
     text += `🏗️ Công trình: ${project.name}\n`;
@@ -225,7 +373,7 @@ const ProjectDetail = () => {
       // Sắp xếp thứ tự thời gian tăng dần để dễ đối chiếu
       const list = [...filteredTransactions].sort((a, b) => new Date(a.date) - new Date(b.date));
       list.forEach((t, i) => {
-        const cat = EXPENSE_CATEGORIES[t.expenseCategory]?.label || (t.type === 'IN' ? 'Thu' : 'Khác');
+        const cat = t.type === 'IN' ? 'Thu' : getExpenseCategoryInfo(t.expenseCategory).label;
         text += `${i + 1}. [${t.date}] ${t.type === 'IN' ? '+' : '-'}${t.amount.toLocaleString('vi-VN')} đ\n   • ${t.note} (${cat})\n`;
       });
     }
@@ -247,8 +395,34 @@ const ProjectDetail = () => {
 
   // 2. Xuất file Excel (CSV UTF-8)
   const exportCSV = () => {
-    const catName = filterCategory === 'ALL' ? 'Tong_hop' : filterCategory;
     const safeProjectName = (project.name || '').replace(/[^a-zA-Z0-9_\u00C0-\u1EF9]/g, '_');
+
+    if (activeTab === 'EXTRAS') {
+      const filename = `Phat_sinh_${safeProjectName}_${new Date().toISOString().slice(0, 10)}.csv`;
+      const headers = ['STT', 'Ngày', 'Loại phát sinh', 'Nội dung phát sinh', 'Trạng thái', 'Số tiền (VNĐ)', 'Ghi chú', 'Đã chuyển Sổ quỹ'];
+      const rows = filteredVariations.map((v, i) => [
+        i + 1,
+        v.date,
+        v.type === 'DECREASE' ? 'Phát sinh giảm' : 'Phát sinh tăng',
+        `"${(v.title || '').replace(/"/g, '""')}"`,
+        `"${(VARIATION_STATUS[v.status]?.label || 'Chờ duyệt').replace(/"/g, '""')}"`,
+        v.type === 'DECREASE' ? -(Number(v.amount) || 0) : (Number(v.amount) || 0),
+        `"${(v.note || '').replace(/"/g, '""')}"`,
+        v.transferredToFinance ? 'Đã chuyển' : 'Chưa chuyển'
+      ]);
+      const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      return;
+    }
+
+    const catName = filterCategory === 'ALL' ? 'Tong_hop' : filterCategory;
     const filename = `Bao_cao_${catName}_${safeProjectName}_${new Date().toISOString().slice(0, 10)}.csv`;
     
     const headers = ['STT', 'Ngày', 'Loại giao dịch', 'Phân loại', 'Nội dung chi tiết', 'Số tiền (VNĐ)'];
@@ -256,7 +430,7 @@ const ProjectDetail = () => {
       i + 1,
       t.date,
       t.type === 'IN' ? 'Tiền Vào' : 'Tiền Ra',
-      `"${(EXPENSE_CATEGORIES[t.expenseCategory]?.label || (t.type === 'IN' ? 'Thu' : 'Khác')).replace(/"/g, '""')}"`,
+      `"${(t.type === 'IN' ? 'Thu' : getExpenseCategoryInfo(t.expenseCategory).label).replace(/"/g, '""')}"`,
       `"${(t.note || '').replace(/"/g, '""')}"`,
       t.type === 'IN' ? t.amount : -t.amount
     ]);
@@ -403,7 +577,121 @@ const ProjectDetail = () => {
       startEditTrans(authModal.targetItem);
     } else if (authModal.action === 'DELETE_TRANS' && authModal.targetItem) {
       await removeTransaction(project.id, authModal.targetItem);
+    } else if (authModal.action === 'EDIT_VAR' && authModal.targetItem) {
+      startEditVariation(authModal.targetItem);
+    } else if (authModal.action === 'DELETE_VAR' && authModal.targetItem) {
+      await removeProjectVariation(project.id, authModal.targetItem);
     }
+  };
+
+  // --- LOGIC NỘI DUNG PHÁT SINH ---
+  const startEditVariation = (v) => {
+    setEditingVarId(v.id);
+    setVarDate(v.date || new Date().toISOString().slice(0, 10));
+    setVarTitle(v.title || '');
+    setVarType(v.type || 'INCREASE');
+    setVarAmount((v.amount || 0).toString());
+    setVarStatus(v.status || 'PENDING');
+    setVarNote(v.note || '');
+  };
+
+  const cancelEditVariation = () => {
+    setEditingVarId(null);
+    setVarDate(new Date().toISOString().slice(0, 10));
+    setVarTitle('');
+    setVarType('INCREASE');
+    setVarAmount('');
+    setVarStatus('PENDING');
+    setVarNote('');
+  };
+
+  const requestEditVariation = (v) => {
+    setAuthModal({
+      isOpen: true,
+      action: 'EDIT_VAR',
+      targetItem: v,
+      title: 'Xác nhận để Sửa Nội dung Phát sinh',
+      desc: `Nhập mật khẩu két sắt (Nhutvn93) để chỉnh sửa mục: "${v.title}".`
+    });
+  };
+
+  const requestDeleteVariation = (varId) => {
+    setAuthModal({
+      isOpen: true,
+      action: 'DELETE_VAR',
+      targetItem: varId,
+      title: 'Xác nhận để Xóa Nội dung Phát sinh',
+      desc: 'Mục phát sinh này sẽ bị xóa vĩnh viễn khỏi công trình. Nhập mật khẩu két sắt (Nhutvn93) để xác nhận.'
+    });
+  };
+
+  const handleSaveVariation = async (e) => {
+    e.preventDefault();
+    const parsedAmount = parseInt(varAmount.toString().replace(/\D/g, ''), 10) || 0;
+    const payload = {
+      date: varDate,
+      title: varTitle.trim(),
+      type: varType,
+      amount: parsedAmount,
+      status: varStatus,
+      note: varNote.trim()
+    };
+
+    if (editingVarId) {
+      await updateProjectVariation(project.id, editingVarId, payload);
+      setEditingVarId(null);
+    } else {
+      await addProjectVariation(project.id, payload);
+    }
+
+    setVarTitle('');
+    setVarAmount('');
+    setVarNote('');
+    setVarStatus('PENDING');
+  };
+
+  const openTransferModal = (v) => {
+    const defaultTransType = v.type === 'DECREASE' ? 'OUT' : 'IN';
+    setTransferModal({
+      isOpen: true,
+      variation: v,
+      date: v.date || new Date().toISOString().slice(0, 10),
+      type: defaultTransType,
+      expenseCategory: 'KHAC',
+      amount: (v.amount || 0).toString(),
+      note: `[Phát sinh] ${v.title}${v.note ? ` (${v.note})` : ''}`,
+      markAsPaid: true
+    });
+  };
+
+  const handleConfirmTransfer = async (e) => {
+    e.preventDefault();
+    if (!transferModal.variation) return;
+    const parsedAmount = parseInt(transferModal.amount.toString().replace(/\D/g, ''), 10) || 0;
+    if (parsedAmount <= 0) {
+      alert('Vui lòng nhập số tiền hợp lệ lớn hơn 0');
+      return;
+    }
+
+    const transPayload = {
+      date: transferModal.date,
+      type: transferModal.type,
+      amount: parsedAmount,
+      note: transferModal.note.trim(),
+      expenseCategory: transferModal.type === 'OUT' ? (transferModal.expenseCategory || 'KHAC') : null,
+      fromVariationId: transferModal.variation.id
+    };
+
+    await transferVariationToFinance(
+      project.id,
+      transferModal.variation.id,
+      transPayload,
+      transferModal.markAsPaid
+    );
+
+    setTransferModal({ ...transferModal, isOpen: false, variation: null });
+    setCopyFeedback('✓ Đã chuyển khoản phát sinh sang Sổ quỹ Thu/Chi thành công!');
+    setTimeout(() => setCopyFeedback(''), 4000);
   };
 
   const startEditTrans = (t) => {
@@ -480,8 +768,8 @@ const ProjectDetail = () => {
           <ArrowLeft size={16} /> Quay lại
         </Link>
         <div className="flex gap-2">
-          {activeTab === 'FINANCE' && role === 'ADMIN' && (
-            <button onClick={copyForZalo} className="btn btn-outline flex items-center gap-1.5" title="Copy tin nhắn có định dạng đẹp để dán vào Zalo gửi cho thợ hoặc đối tác">
+          {(activeTab === 'FINANCE' || activeTab === 'EXTRAS') && role === 'ADMIN' && (
+            <button onClick={copyForZalo} className="btn btn-outline flex items-center gap-1.5" title="Copy tin nhắn có định dạng đẹp để dán vào Zalo">
               <Copy size={16} className="text-primary" /> Sao chép gửi Zalo
             </button>
           )}
@@ -495,14 +783,29 @@ const ProjectDetail = () => {
       <div className="card mb-6" ref={reportRef}>
         <div className="flex justify-between items-start">
           <div style={{ width: '100%' }}>
-            <h1 className="text-2xl font-bold mb-2">{project.name}</h1>
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <h1 className="text-2xl font-bold">{project.name}</h1>
+              <span className="badge badge-primary">Năm {getProjectYear(project) || 'Khác'}</span>
+            </div>
             <p className="text-secondary mb-2">
               Phụ trách: <strong>{project.manager}</strong> | Bắt đầu: {project.startDate} | Dự kiến: {project.durationMonths} tháng
             </p>
             {role === 'ADMIN' ? (
-              <p className="text-secondary mb-4">
-                Tổng giá trị hợp đồng: <strong>{project.totalValue?.toLocaleString('vi-VN')} VNĐ</strong>
-              </p>
+              <div className="text-secondary mb-4 space-y-1">
+                <p>
+                  Tổng giá trị hợp đồng: <strong>{project.totalValue?.toLocaleString('vi-VN')} VNĐ</strong>
+                </p>
+                {variationStats.totalCount > 0 && (
+                  <p className="text-sm">
+                    Phát sinh ({variationStats.totalCount} mục):{' '}
+                    <strong style={{ color: variationStats.netSum >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                      {variationStats.netSum >= 0 ? '+' : ''}{variationStats.netSum.toLocaleString('vi-VN')} VNĐ
+                    </strong>
+                    {' '}→ Tổng sau phát sinh:{' '}
+                    <strong className="text-primary">{variationStats.totalAfterVariations.toLocaleString('vi-VN')} VNĐ</strong>
+                  </p>
+                )}
+              </div>
             ) : (
               <p className="text-secondary mb-4 flex items-center gap-1.5 text-xs">
                 <span className="badge badge-secondary flex items-center gap-1" style={{ fontSize: '0.78rem', padding: '0.25rem 0.6rem' }}>
@@ -565,6 +868,59 @@ const ProjectDetail = () => {
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                )}
+
+                {activeTab === 'EXTRAS' && (
+                  <div className="table-container">
+                    <table className="table" style={{ border: '1px solid #ddd', width: '100%' }}>
+                      <thead style={{ background: '#f5f5f5' }}>
+                        <tr>
+                          <th style={{ width: '40px' }}>STT</th>
+                          <th style={{ width: '95px' }}>Ngày</th>
+                          <th style={{ width: '105px' }}>Loại</th>
+                          <th>Nội dung phát sinh</th>
+                          <th style={{ width: '115px' }}>Trạng thái</th>
+                          <th className="text-right" style={{ width: '130px' }}>Số tiền (VNĐ)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredVariations.map((v, idx) => (
+                          <tr key={v.id}>
+                            <td className="text-secondary text-xs">{idx + 1}</td>
+                            <td>{v.date}</td>
+                            <td>{v.type === 'DECREASE' ? 'Phát sinh giảm' : 'Phát sinh tăng'}</td>
+                            <td>
+                              {v.title}
+                              {v.note ? <div style={{ fontSize: '0.8rem', color: '#666' }}>{v.note}</div> : null}
+                            </td>
+                            <td>{VARIATION_STATUS[v.status]?.label || 'Chờ duyệt'}</td>
+                            <td className="text-right font-bold" style={{ color: v.type === 'DECREASE' ? '#ef4444' : '#10b981' }}>
+                              {v.type === 'DECREASE' ? '-' : '+'}{(Number(v.amount) || 0).toLocaleString('vi-VN')}
+                            </td>
+                          </tr>
+                        ))}
+                        <tr style={{ background: '#f8fafc', fontWeight: 'bold' }}>
+                          <td colSpan="5" className="text-right">TỔNG PHÁT SINH RÒNG:</td>
+                          <td className="text-right" style={{ color: variationStats.netSum >= 0 ? '#10b981' : '#ef4444' }}>
+                            {variationStats.netSum >= 0 ? '+' : ''}{variationStats.netSum.toLocaleString('vi-VN')} đ
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', marginTop: '2.5rem', textAlign: 'center', pageBreakInside: 'avoid' }}>
+                      <div>
+                        <strong>Đại diện Chủ đầu tư / Khách hàng</strong>
+                        <p style={{ fontSize: '0.8rem', color: '#666', marginTop: '4px' }}>(Ký xác nhận phát sinh)</p>
+                        <div style={{ height: '70px' }}></div>
+                      </div>
+                      <div>
+                        <strong>Đại diện Đơn vị Thi công</strong>
+                        <p style={{ fontSize: '0.8rem', color: '#666', marginTop: '4px' }}>(Ký và ghi rõ họ tên)</p>
+                        <div style={{ height: '70px' }}></div>
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -651,15 +1007,25 @@ const ProjectDetail = () => {
         </div>
       </div>
 
-      {/* Tabs chuyển đổi giữa Nhật ký & Sổ quỹ */}
+      {/* Tabs chuyển đổi giữa Nhật ký, Nội dung phát sinh & Sổ quỹ */}
       {role === 'ADMIN' ? (
-        <div className="flex gap-4 mb-6 no-print" style={{ borderBottom: '1px solid var(--border-color)' }}>
+        <div className="flex flex-wrap gap-4 mb-6 no-print" style={{ borderBottom: '1px solid var(--border-color)' }}>
           <button 
             className={`pb-2 px-4 ${activeTab === 'LOGS' ? 'border-b-2 font-bold' : 'text-secondary'}`} 
             style={{ borderColor: activeTab === 'LOGS' ? 'var(--accent-primary)' : 'transparent' }}
             onClick={() => setActiveTab('LOGS')}
           >
             Nhật ký thi công
+          </button>
+          <button 
+            className={`pb-2 px-4 flex items-center gap-1.5 ${activeTab === 'EXTRAS' ? 'border-b-2 font-bold' : 'text-secondary'}`} 
+            style={{ borderColor: activeTab === 'EXTRAS' ? 'var(--accent-primary)' : 'transparent' }}
+            onClick={() => setActiveTab('EXTRAS')}
+          >
+            Nội dung phát sinh
+            {variationStats.totalCount > 0 && (
+              <span className="badge badge-orange text-xs">{variationStats.totalCount}</span>
+            )}
           </button>
           <button 
             className={`pb-2 px-4 ${activeTab === 'FINANCE' ? 'border-b-2 font-bold' : 'text-secondary'}`}
@@ -793,9 +1159,259 @@ const ProjectDetail = () => {
       )}
 
       {/* ========================================================= */}
-      {/* TAB 2: SỔ QUỸ THU / CHI (CÓ BỘ LỌC TỪNG ĐỘI & XUẤT BÁO CÁO) */}
+      {/* TAB 2: NỘI DUNG PHÁT SINH (CHỈ ADMIN) */}
       {/* ========================================================= */}
-      {activeTab === 'FINANCE' && (
+      {activeTab === 'EXTRAS' && role === 'ADMIN' && (
+        <div className="flex flex-col gap-8">
+          <div>
+            {/* Thẻ thống kê Phát sinh */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6" style={{ maxWidth: '900px' }}>
+              <div className="card" style={{ padding: '1rem', borderLeft: '4px solid var(--success)' }}>
+                <div className="text-xs text-secondary font-medium mb-1">📈 Phát sinh tăng</div>
+                <div className="text-lg font-bold text-success">+{variationStats.increaseSum.toLocaleString('vi-VN')} <span className="text-xs">đ</span></div>
+              </div>
+              <div className="card" style={{ padding: '1rem', borderLeft: '4px solid var(--danger)' }}>
+                <div className="text-xs text-secondary font-medium mb-1">📉 Phát sinh giảm</div>
+                <div className="text-lg font-bold text-danger">-{variationStats.decreaseSum.toLocaleString('vi-VN')} <span className="text-xs">đ</span></div>
+              </div>
+              <div className="card" style={{ padding: '1rem', borderLeft: '4px solid var(--accent-primary)' }}>
+                <div className="text-xs text-secondary font-medium mb-1">⚖️ Phát sinh ròng</div>
+                <div className="text-lg font-bold" style={{ color: variationStats.netSum >= 0 ? 'var(--accent-primary)' : 'var(--danger)' }}>
+                  {variationStats.netSum >= 0 ? '+' : ''}{variationStats.netSum.toLocaleString('vi-VN')} <span className="text-xs">đ</span>
+                </div>
+              </div>
+              <div className="card" style={{ padding: '1rem', borderLeft: '4px solid var(--accent-secondary)' }}>
+                <div className="text-xs text-secondary font-medium mb-1">🏗️ Tổng HĐ + Phát sinh</div>
+                <div className="text-lg font-bold" style={{ color: 'var(--accent-secondary)' }}>
+                  {variationStats.totalAfterVariations.toLocaleString('vi-VN')} <span className="text-xs">đ</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Form Thêm / Sửa Nội dung Phát sinh */}
+            <div className="card" style={{ maxWidth: '900px' }}>
+              <h3 className="font-bold mb-4 flex items-center gap-2">
+                <FilePlus2 size={18} className="text-primary" />
+                {editingVarId ? 'Sửa nội dung phát sinh' : 'Ghi nhận nội dung phát sinh mới'}
+              </h3>
+              <form onSubmit={handleSaveVariation} className="flex flex-col gap-4">
+                <div className="grid md:grid-cols-3 gap-4">
+                  <div className="input-group">
+                    <label className="input-label">Ngày phát sinh</label>
+                    <input type="date" required className="input-field" value={varDate} onChange={e => setVarDate(e.target.value)} />
+                  </div>
+                  <div className="input-group">
+                    <label className="input-label">Loại phát sinh</label>
+                    <select className="input-field" value={varType} onChange={e => setVarType(e.target.value)}>
+                      <option value="INCREASE">📈 Phát sinh tăng (Làm thêm hạng mục)</option>
+                      <option value="DECREASE">📉 Phát sinh giảm (Cắt bớt hạng mục)</option>
+                    </select>
+                  </div>
+                  <div className="input-group">
+                    <label className="input-label">Trạng thái duyệt</label>
+                    <select className="input-field" value={varStatus} onChange={e => setVarStatus(e.target.value)}>
+                      <option value="PENDING">⏳ Chờ duyệt</option>
+                      <option value="APPROVED">✅ Đã duyệt / Đã chốt</option>
+                      <option value="PAID">💰 Đã thanh toán</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="input-group">
+                    <label className="input-label">Nội dung hạng mục phát sinh</label>
+                    <input
+                      type="text"
+                      required
+                      className="input-field"
+                      value={varTitle}
+                      onChange={e => setVarTitle(e.target.value)}
+                      placeholder="VD: Làm thêm mái che sân thượng, đổi gạch..."
+                    />
+                  </div>
+                  <div className="input-group">
+                    <label className="input-label">Giá trị phát sinh (VNĐ)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      required
+                      className="input-field"
+                      value={varAmount}
+                      onChange={e => setVarAmount(e.target.value)}
+                      placeholder="Nhập số tiền..."
+                    />
+                  </div>
+                </div>
+
+                <div className="input-group">
+                  <label className="input-label">Ghi chú / Diễn giải khối lượng (Không bắt buộc)</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={varNote}
+                    onChange={e => setVarNote(e.target.value)}
+                    placeholder="VD: Chủ nhà yêu cầu thêm ngày 20/11, kích thước 15m2..."
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <button type="submit" className="btn btn-primary w-full justify-center">
+                    {editingVarId ? 'Lưu chỉnh sửa phát sinh' : 'Thêm nội dung phát sinh'}
+                  </button>
+                  {editingVarId && <button type="button" className="btn btn-outline" onClick={cancelEditVariation}>Hủy</button>}
+                </div>
+              </form>
+            </div>
+          </div>
+
+          {/* Bảng danh sách Phát sinh */}
+          <div>
+            <div className="card w-full">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3" style={{ borderBottom: '1px solid var(--border-color)' }}>
+                <div>
+                  <h3 className="font-bold text-lg flex items-center gap-2">
+                    <Filter size={18} className="text-primary" />
+                    Danh sách Nội dung Phát sinh
+                  </h3>
+                  <p className="text-xs text-secondary mt-0.5">
+                    Theo dõi các hạng mục phát sinh và bấm nút chuyển nhanh sang Sổ quỹ Thu/Chi khi thanh toán.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button onClick={copyForZalo} className="btn btn-outline flex items-center gap-1.5 text-xs">
+                    <Copy size={14} className="text-primary" /> Copy gửi Zalo
+                  </button>
+                  <button onClick={exportCSV} className="btn btn-outline flex items-center gap-1.5 text-xs">
+                    <FileSpreadsheet size={14} className="text-success" /> Xuất Excel
+                  </button>
+                  <button onClick={exportPDF} className="btn btn-primary flex items-center gap-1.5 text-xs">
+                    <Download size={14} /> Xuất PDF
+                  </button>
+                  <button onClick={printReport} className="btn btn-outline flex items-center gap-1.5 text-xs">
+                    <Printer size={14} /> In
+                  </button>
+                </div>
+              </div>
+
+              {/* Bộ lọc Trạng thái & Tìm kiếm */}
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button className={`filter-pill ${varFilterStatus === 'ALL' ? 'active' : ''}`} onClick={() => setVarFilterStatus('ALL')}>
+                    Tất cả ({variationStats.totalCount})
+                  </button>
+                  <button className={`filter-pill ${varFilterStatus === 'PENDING' ? 'active' : ''}`} onClick={() => setVarFilterStatus('PENDING')}>
+                    ⏳ Chờ duyệt
+                  </button>
+                  <button className={`filter-pill ${varFilterStatus === 'APPROVED' ? 'active' : ''}`} onClick={() => setVarFilterStatus('APPROVED')}>
+                    ✅ Đã duyệt
+                  </button>
+                  <button className={`filter-pill ${varFilterStatus === 'PAID' ? 'active' : ''}`} onClick={() => setVarFilterStatus('PAID')}>
+                    💰 Đã thanh toán
+                  </button>
+                  <select
+                    className="input-field"
+                    style={{ padding: '4px 10px', fontSize: '0.8rem' }}
+                    value={varFilterType}
+                    onChange={e => setVarFilterType(e.target.value)}
+                  >
+                    <option value="ALL">Tất cả tăng/giảm</option>
+                    <option value="INCREASE">Chỉ phát sinh tăng</option>
+                    <option value="DECREASE">Chỉ phát sinh giảm</option>
+                  </select>
+                </div>
+
+                <div style={{ position: 'relative', minWidth: '220px', flex: '1', maxWidth: '300px' }}>
+                  <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                  <input
+                    type="text"
+                    placeholder="Tìm nội dung phát sinh..."
+                    className="input-field"
+                    style={{ width: '100%', paddingLeft: '32px', fontSize: '0.8rem' }}
+                    value={varSearch}
+                    onChange={e => setVarSearch(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="table-container">
+                <table className="table" style={{ minWidth: '860px' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: '45px' }}>STT</th>
+                      <th style={{ width: '105px' }}>Ngày</th>
+                      <th style={{ width: '125px' }}>Loại</th>
+                      <th style={{ minWidth: '230px' }}>Nội dung phát sinh</th>
+                      <th style={{ width: '125px' }}>Trạng thái</th>
+                      <th className="text-right" style={{ width: '135px' }}>Số tiền</th>
+                      <th className="text-right no-print" style={{ width: '210px' }}>Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredVariations.map((v, idx) => {
+                      const statusInfo = VARIATION_STATUS[v.status] || VARIATION_STATUS.PENDING;
+                      return (
+                        <tr key={v.id} style={{ background: editingVarId === v.id ? 'var(--bg-secondary)' : 'transparent' }}>
+                          <td className="text-secondary text-xs">{idx + 1}</td>
+                          <td className="text-sm">{v.date}</td>
+                          <td>
+                            {v.type === 'DECREASE' ? (
+                              <span className="badge badge-danger">📉 Giảm</span>
+                            ) : (
+                              <span className="badge badge-success">📈 Tăng</span>
+                            )}
+                          </td>
+                          <td>
+                            <div className="text-sm font-medium">{v.title}</div>
+                            {v.note && <div className="text-xs text-secondary mt-0.5">{v.note}</div>}
+                            {v.transferredToFinance && (
+                              <span className="badge badge-primary text-xs mt-1">✓ Đã chuyển Sổ quỹ</span>
+                            )}
+                          </td>
+                          <td>
+                            <span className={`badge ${statusInfo.badge}`}>{statusInfo.label}</span>
+                          </td>
+                          <td className="text-right font-bold text-sm" style={{ color: v.type === 'DECREASE' ? 'var(--danger)' : 'var(--success)' }}>
+                            {v.type === 'DECREASE' ? '-' : '+'}{(Number(v.amount) || 0).toLocaleString('vi-VN')} đ
+                          </td>
+                          <td className="text-right no-print">
+                            <div className="flex gap-1.5 justify-end items-center">
+                              <button
+                                onClick={() => openTransferModal(v)}
+                                className="btn btn-outline text-xs flex items-center gap-1"
+                                style={{ padding: '4px 8px', borderColor: 'var(--accent-primary)', color: 'var(--accent-primary)' }}
+                                title="Chuyển nhanh khoản phát sinh này sang Sổ quỹ Thu/Chi"
+                              >
+                                <ArrowRightLeft size={13} />
+                                {v.transferredToFinance ? 'Chuyển thêm' : 'Chuyển Sổ quỹ'}
+                              </button>
+                              <button onClick={() => requestEditVariation(v)} className="icon-btn text-info" title="Sửa (Cần mật khẩu két sắt)"><Edit size={16} /></button>
+                              <button onClick={() => requestDeleteVariation(v.id)} className="icon-btn text-danger" title="Xóa (Cần mật khẩu két sắt)"><Trash2 size={16} /></button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+
+                    {filteredVariations.length === 0 && (
+                      <tr>
+                        <td colSpan="7" className="text-center text-secondary py-6">
+                          Chưa có nội dung phát sinh nào phù hợp.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* TAB 3: SỔ QUỸ THU / CHI (CÓ BỘ LỌC TỪNG ĐỘI & XUẤT BÁO CÁO) */}
+      {/* ========================================================= */}
+      {activeTab === 'FINANCE' && role === 'ADMIN' && (
         <div className="flex flex-col gap-8">
           <div>
             {/* Thống kê Tổng thu & Tổng chi */}
@@ -822,15 +1438,15 @@ const ProjectDetail = () => {
               >
                 <div className="flex items-center justify-between mb-2">
                   <span className="opacity-80">Tổng chi (Tiền ra)</span>
-                  <span className="text-xs opacity-75">{countThoXay + countThoKhac + countVatTu + countKhac} giao dịch</span>
+                  <span className="text-xs opacity-75">{countOut} giao dịch</span>
                 </div>
                 <div className="text-2xl font-bold">{totalOut.toLocaleString('vi-VN')} VNĐ</div>
-                <div className="text-xs opacity-75 mt-1">Gồm thợ xây, thợ khác, vật tư & chi phí khác</div>
+                <div className="text-xs opacity-75 mt-1">Gồm thợ xây, 5 nhóm thợ phụ, vật tư & chi phí khác</div>
               </div>
             </div>
 
-            {/* Thống kê bóc tách 4 nhóm chi phí - CÓ THỂ CLICK VÀO ĐỂ LỌC NHANH */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-2" style={{ maxWidth: '850px' }}>
+            {/* Thống kê bóc tách 4 nhóm chính */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3" style={{ maxWidth: '900px' }}>
               
               {/* Card 1: Thợ xây */}
               <div 
@@ -841,28 +1457,28 @@ const ProjectDetail = () => {
               >
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs text-secondary font-medium">🧱 Thợ xây ứng/trả</span>
-                  <span className="text-xs badge badge-primary">{countThoXay}</span>
+                  <span className="text-xs badge badge-primary">{countsByCategory.THO_XAY || 0}</span>
                 </div>
-                <div className="text-lg font-bold text-primary">{totalThoXay.toLocaleString('vi-VN')} <span className="text-xs">đ</span></div>
+                <div className="text-lg font-bold text-primary">{(totalsByCategory.THO_XAY || 0).toLocaleString('vi-VN')} <span className="text-xs">đ</span></div>
                 <div className="text-xs mt-1" style={{ color: filterCategory === 'THO_XAY' ? 'var(--accent-primary)' : 'var(--text-secondary)' }}>
                   {filterCategory === 'THO_XAY' ? '● Đang lọc đội này' : '👉 Nhấp để lọc'}
                 </div>
               </div>
 
-              {/* Card 2: Thợ khác */}
+              {/* Card 2: Tổng 5 nhóm Thợ phụ trợ */}
               <div 
-                className={`card card-clickable ${filterCategory === 'THO_KHAC' ? 'active-card' : ''}`}
+                className={`card card-clickable ${filterCategory === 'SUB_CONTRACTORS' ? 'active-card' : ''}`}
                 style={{ padding: '1rem', borderLeft: '4px solid var(--info)' }}
-                onClick={() => setFilterCategory(filterCategory === 'THO_KHAC' ? 'ALL' : 'THO_KHAC')}
-                title="Nhấp để lọc tiền thợ điện, nước, thạch cao, sơn, nhôm kính..."
+                onClick={() => setFilterCategory(filterCategory === 'SUB_CONTRACTORS' ? 'ALL' : 'SUB_CONTRACTORS')}
+                title="Nhấp để lọc gộp cả 5 đội thợ: Điện, Sơn, Cơ khí, Nhôm kính, Thợ khác"
               >
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs text-secondary font-medium">⚡ Thợ khác chi</span>
-                  <span className="text-xs badge badge-info">{countThoKhac}</span>
+                  <span className="text-xs text-secondary font-medium">👷 5 Đội thợ phụ trợ</span>
+                  <span className="text-xs badge badge-info">{countSubContractors}</span>
                 </div>
-                <div className="text-lg font-bold" style={{ color: 'var(--info)' }}>{totalThoKhac.toLocaleString('vi-VN')} <span className="text-xs">đ</span></div>
-                <div className="text-xs mt-1" style={{ color: filterCategory === 'THO_KHAC' ? 'var(--info)' : 'var(--text-secondary)' }}>
-                  {filterCategory === 'THO_KHAC' ? '● Đang lọc đội này' : '👉 Nhấp để lọc'}
+                <div className="text-lg font-bold" style={{ color: 'var(--info)' }}>{totalSubContractors.toLocaleString('vi-VN')} <span className="text-xs">đ</span></div>
+                <div className="text-xs mt-1" style={{ color: filterCategory === 'SUB_CONTRACTORS' ? 'var(--info)' : 'var(--text-secondary)' }}>
+                  {filterCategory === 'SUB_CONTRACTORS' ? '● Đang lọc 5 đội' : '👉 Điện, Sơn, CK, NK, Khác'}
                 </div>
               </div>
 
@@ -875,9 +1491,9 @@ const ProjectDetail = () => {
               >
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs text-secondary font-medium">🏗️ Tiền vật tư</span>
-                  <span className="text-xs badge badge-orange">{countVatTu}</span>
+                  <span className="text-xs badge badge-orange">{countsByCategory.VAT_TU || 0}</span>
                 </div>
-                <div className="text-lg font-bold" style={{ color: 'var(--accent-secondary)' }}>{totalVatTu.toLocaleString('vi-VN')} <span className="text-xs">đ</span></div>
+                <div className="text-lg font-bold" style={{ color: 'var(--accent-secondary)' }}>{(totalsByCategory.VAT_TU || 0).toLocaleString('vi-VN')} <span className="text-xs">đ</span></div>
                 <div className="text-xs mt-1" style={{ color: filterCategory === 'VAT_TU' ? 'var(--accent-secondary)' : 'var(--text-secondary)' }}>
                   {filterCategory === 'VAT_TU' ? '● Đang lọc vật tư' : '👉 Nhấp để lọc'}
                 </div>
@@ -892,14 +1508,47 @@ const ProjectDetail = () => {
               >
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs text-secondary font-medium">📦 Chi phí khác</span>
-                  <span className="text-xs badge badge-secondary">{countKhac}</span>
+                  <span className="text-xs badge badge-secondary">{countsByCategory.KHAC || 0}</span>
                 </div>
-                <div className="text-lg font-bold text-secondary">{totalKhac.toLocaleString('vi-VN')} <span className="text-xs">đ</span></div>
+                <div className="text-lg font-bold text-secondary">{(totalsByCategory.KHAC || 0).toLocaleString('vi-VN')} <span className="text-xs">đ</span></div>
                 <div className="text-xs mt-1" style={{ color: filterCategory === 'KHAC' ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
                   {filterCategory === 'KHAC' ? '● Đang lọc mục này' : '👉 Nhấp để lọc'}
                 </div>
               </div>
 
+            </div>
+
+            {/* Chi tiết 5 nhóm thợ tách riêng: Thợ điện, Thợ sơn, Thợ cơ khí, Thợ nhôm kính, Thợ khác */}
+            <div className="mb-2" style={{ maxWidth: '900px' }}>
+              <div className="text-xs font-bold text-secondary mb-2">
+                Chi tiết theo từng đội thợ (Nhấp vào đội để lọc & xuất báo cáo riêng):
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
+                {SUB_CONTRACTOR_CATEGORIES.map((catKey) => {
+                  const info = EXPENSE_CATEGORIES[catKey];
+                  const isActive = filterCategory === catKey;
+                  return (
+                    <div
+                      key={catKey}
+                      className={`card card-clickable ${isActive ? 'active-card' : ''}`}
+                      style={{ padding: '0.85rem', borderLeft: `4px solid ${info.color}` }}
+                      onClick={() => setFilterCategory(isActive ? 'ALL' : catKey)}
+                      title={`Nhấp để lọc riêng ${info.label.toLowerCase()}`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-semibold text-secondary">{info.icon} {info.shortLabel}</span>
+                        <span className={`text-xs badge ${info.badge}`}>{countsByCategory[catKey] || 0}</span>
+                      </div>
+                      <div className="text-base font-bold" style={{ color: info.color }}>
+                        {(totalsByCategory[catKey] || 0).toLocaleString('vi-VN')} <span className="text-xs">đ</span>
+                      </div>
+                      <div className="text-xs mt-0.5" style={{ color: isActive ? info.color : 'var(--text-secondary)' }}>
+                        {isActive ? '● Đang lọc' : '👉 Lọc đội này'}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             <p className="text-xs text-secondary mb-6 italic">
@@ -928,10 +1577,9 @@ const ProjectDetail = () => {
                   <div className="input-group animate-fade-in">
                     <label className="input-label font-bold" style={{ color: 'var(--danger)' }}>Phân loại khoản chi</label>
                     <select className="input-field" value={expenseCategory} onChange={e=>setExpenseCategory(e.target.value)} style={{ borderColor: 'var(--danger)' }}>
-                      <option value="THO_XAY">🧱 Tiền thợ xây (Ứng thợ, tiền công)</option>
-                      <option value="THO_KHAC">⚡ Tiền thợ khác (Điện, nước, thạch cao, sơn, nhôm...)</option>
-                      <option value="VAT_TU">🏗️ Tiền vật tư (Xi măng, cát, đá, sắt thép, gạch...)</option>
-                      <option value="KHAC">📦 Tiền khác (Vận chuyển, máy móc, phát sinh...)</option>
+                      {EXPENSE_CATEGORY_LIST.map((cat) => (
+                        <option key={cat.key} value={cat.key}>{cat.optionLabel}</option>
+                      ))}
                     </select>
                   </div>
                 )}
@@ -1027,32 +1675,24 @@ const ProjectDetail = () => {
                 </button>
 
                 <button 
-                  className={`filter-pill ${filterCategory === 'THO_XAY' ? 'active' : ''}`}
-                  onClick={() => setFilterCategory('THO_XAY')}
+                  className={`filter-pill ${filterCategory === 'SUB_CONTRACTORS' ? 'active' : ''}`}
+                  onClick={() => setFilterCategory('SUB_CONTRACTORS')}
                 >
-                  🧱 Tiền thợ xây ({countThoXay})
+                  👷 5 đội thợ phụ ({countSubContractors})
                 </button>
 
-                <button 
-                  className={`filter-pill ${filterCategory === 'THO_KHAC' ? 'active' : ''}`}
-                  onClick={() => setFilterCategory('THO_KHAC')}
-                >
-                  ⚡ Tiền thợ khác ({countThoKhac})
-                </button>
-
-                <button 
-                  className={`filter-pill ${filterCategory === 'VAT_TU' ? 'active' : ''}`}
-                  onClick={() => setFilterCategory('VAT_TU')}
-                >
-                  🏗️ Tiền vật tư ({countVatTu})
-                </button>
-
-                <button 
-                  className={`filter-pill ${filterCategory === 'KHAC' ? 'active' : ''}`}
-                  onClick={() => setFilterCategory('KHAC')}
-                >
-                  📦 Chi phí khác ({countKhac})
-                </button>
+                {EXPENSE_CATEGORY_LIST.map((item) => {
+                  const info = EXPENSE_CATEGORIES[item.key];
+                  return (
+                    <button
+                      key={item.key}
+                      className={`filter-pill ${filterCategory === item.key ? 'active' : ''}`}
+                      onClick={() => setFilterCategory(item.key)}
+                    >
+                      {info.icon} {info.shortLabel} ({countsByCategory[item.key] || 0})
+                    </button>
+                  );
+                })}
 
                 <button 
                   className={`filter-pill ${filterCategory === 'IN' ? 'active' : ''}`}
@@ -1128,11 +1768,9 @@ const ProjectDetail = () => {
                 <div className="flex items-center gap-2">
                   <span className="font-bold text-sm">
                     {filterCategory === 'ALL' && '📋 Xem tất cả các khoản'}
-                    {filterCategory === 'THO_XAY' && '🧱 Đang lọc: Tiền thợ xây (Ứng thợ, tiền công)'}
-                    {filterCategory === 'THO_KHAC' && '⚡ Đang lọc: Tiền thợ khác (Điện, nước, thạch cao, sơn...)'}
-                    {filterCategory === 'VAT_TU' && '🏗️ Đang lọc: Tiền vật tư công trình'}
-                    {filterCategory === 'KHAC' && '📦 Đang lọc: Các chi phí phát sinh khác'}
+                    {filterCategory === 'SUB_CONTRACTORS' && '👷 Đang lọc: Tổng 5 đội thợ phụ trợ (Điện, Sơn, Cơ khí, Nhôm kính, Thợ khác)'}
                     {filterCategory === 'IN' && '💰 Đang lọc: Các khoản tiền vào (Khách thanh toán)'}
+                    {EXPENSE_CATEGORIES[filterCategory] && `${EXPENSE_CATEGORIES[filterCategory].icon} Đang lọc: ${EXPENSE_CATEGORIES[filterCategory].label}`}
                   </span>
                   <span className="badge badge-secondary text-xs">
                     {filteredTransactions.length} giao dịch
@@ -1237,6 +1875,111 @@ const ProjectDetail = () => {
               </div>
 
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Chuyển nhanh Khoản Phát Sinh sang Sổ Quỹ */}
+      {transferModal.isOpen && (
+        <div className="modal-overlay" onClick={() => setTransferModal({ ...transferModal, isOpen: false })}>
+          <div className="modal-content" style={{ maxWidth: '560px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <h3 className="font-bold text-lg flex items-center gap-2">
+                  <ArrowRightLeft size={18} className="text-primary" />
+                  Chuyển Phát Sinh sang Sổ Quỹ
+                </h3>
+                <p className="text-xs text-secondary mt-0.5">
+                  Tạo ngay một giao dịch Thu hoặc Chi tương ứng trong Sổ quỹ Thu/Chi công trình.
+                </p>
+              </div>
+              <button onClick={() => setTransferModal({ ...transferModal, isOpen: false })} className="icon-btn">
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmTransfer} className="modal-body flex flex-col gap-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="input-group">
+                  <label className="input-label">Ngày ghi sổ quỹ</label>
+                  <input
+                    type="date"
+                    required
+                    className="input-field"
+                    value={transferModal.date}
+                    onChange={e => setTransferModal({ ...transferModal, date: e.target.value })}
+                  />
+                </div>
+                <div className="input-group">
+                  <label className="input-label">Loại giao dịch Sổ quỹ</label>
+                  <select
+                    className="input-field"
+                    value={transferModal.type}
+                    onChange={e => setTransferModal({ ...transferModal, type: e.target.value })}
+                  >
+                    <option value="IN">Tiền Vào (Khách thanh toán phát sinh)</option>
+                    <option value="OUT">Tiền Ra (Chi trả đội thợ / vật tư phát sinh)</option>
+                  </select>
+                </div>
+              </div>
+
+              {transferModal.type === 'OUT' && (
+                <div className="input-group">
+                  <label className="input-label font-bold" style={{ color: 'var(--danger)' }}>Phân loại khoản chi</label>
+                  <select
+                    className="input-field"
+                    style={{ borderColor: 'var(--danger)' }}
+                    value={transferModal.expenseCategory}
+                    onChange={e => setTransferModal({ ...transferModal, expenseCategory: e.target.value })}
+                  >
+                    {EXPENSE_CATEGORY_LIST.map((cat) => (
+                      <option key={cat.key} value={cat.key}>{cat.optionLabel}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="input-group">
+                <label className="input-label">Số tiền ghi sổ quỹ (VNĐ)</label>
+                <input
+                  type="number"
+                  min="1"
+                  required
+                  className="input-field"
+                  value={transferModal.amount}
+                  onChange={e => setTransferModal({ ...transferModal, amount: e.target.value })}
+                />
+              </div>
+
+              <div className="input-group">
+                <label className="input-label">Nội dung giao dịch</label>
+                <input
+                  type="text"
+                  required
+                  className="input-field"
+                  value={transferModal.note}
+                  onChange={e => setTransferModal({ ...transferModal, note: e.target.value })}
+                />
+              </div>
+
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={transferModal.markAsPaid}
+                  onChange={e => setTransferModal({ ...transferModal, markAsPaid: e.target.checked })}
+                />
+                <span>Tự động đánh dấu mục phát sinh này là <strong>Đã thanh toán</strong></span>
+              </label>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" className="btn btn-outline" onClick={() => setTransferModal({ ...transferModal, isOpen: false })}>
+                  Hủy
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  <ArrowRightLeft size={15} /> Xác nhận chuyển sang Sổ quỹ
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

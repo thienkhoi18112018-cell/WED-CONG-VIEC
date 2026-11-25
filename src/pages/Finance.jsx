@@ -7,13 +7,14 @@ import {
   Building2, HardHat, X, Search, ExternalLink, Download, Eye, Filter,
   LayoutList, Table as TableIcon 
 } from 'lucide-react';
-
-const PROJECT_EXPENSE_CATEGORIES = {
-  THO_XAY: { label: 'Tiền thợ xây', badge: 'badge-primary', icon: '🧱' },
-  THO_KHAC: { label: 'Tiền thợ khác', badge: 'badge-info', icon: '⚡' },
-  VAT_TU: { label: 'Tiền vật tư', badge: 'badge-orange', icon: '🏗️' },
-  KHAC: { label: 'Tiền khác', badge: 'badge-secondary', icon: '📦' }
-};
+import { EXPENSE_CATEGORIES as PROJECT_EXPENSE_CATEGORIES } from '../constants/expenseCategories';
+import {
+  YEAR_FILTER_OPTIONS,
+  getProjectYear,
+  getYearFromDate,
+  matchesYearFilter,
+  getYearFilterLabel
+} from '../utils/yearHelpers';
 
 const COMPANY_EXPENSE_CATEGORIES = {
   LUONG: { label: 'Trả lương & Thưởng', badge: 'badge-primary', icon: '💼' },
@@ -26,6 +27,9 @@ const COMPANY_EXPENSE_CATEGORIES = {
 
 const Finance = () => {
   const { role, projects, designs, companyExpenses } = useAppContext();
+
+  // Bộ lọc tài chính theo năm ('ALL' | '2026' | '2027' | 'OTHER')
+  const [selectedYear, setSelectedYear] = useState('ALL');
 
   // State cho Modal chi tiết thu/chi khi click vào các thẻ
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -62,7 +66,6 @@ const Finance = () => {
     
     // Ngày giờ hiện tại địa phương
     const now = new Date();
-    const currentYear = now.getFullYear();
     const pad = (n) => String(n).padStart(2, '0');
     const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
     const currentMonthStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
@@ -87,30 +90,32 @@ const Finance = () => {
     let thisWeekOutSum = 0;
 
     const allFinance = [];
-    const allTransactions = [];
     const pBreakdown = [];
 
     // 1. Quét giao dịch từ Dự án Thi Công
     (projects || []).forEach(p => {
       let pIn = 0; 
       let pOut = 0;
+      const pYear = getProjectYear(p);
       (p.transactions || []).forEach((t, idx) => {
-        allTransactions.push(t);
+        const amt = Number(t.amount) || 0;
+        const tYear = getYearFromDate(t.date);
+        const matchesSelectedYear = matchesYearFilter(tYear, selectedYear);
         const isToday = t.date === todayStr;
         const isWeek = t.date >= mondayStr && t.date <= sundayStr;
         const isMonth = t.date && t.date.startsWith(currentMonthStr);
 
         if (t.type === 'IN') { 
-          tIn += t.amount; 
-          pIn += t.amount; 
-          if (isToday) todayInSum += t.amount;
-          if (isWeek) thisWeekInSum += t.amount;
+          pIn += amt; 
+          if (matchesSelectedYear) tIn += amt;
+          if (isToday) todayInSum += amt;
+          if (isWeek) thisWeekInSum += amt;
 
           allFinance.push({
             id: `p-in-${p.id}-${t.id || idx}`,
             type: 'IN',
             date: t.date,
-            amount: t.amount,
+            amount: amt,
             note: t.note || 'Thu tiền đợt thi công',
             sourceType: 'CONSTRUCTION',
             sourceTypeName: 'Dự án Thi Công',
@@ -121,16 +126,17 @@ const Finance = () => {
             categoryLabel: 'Tiền thu (Vào)',
             categoryIcon: '💰',
             categoryBadge: 'badge-success',
+            matchesSelectedYear,
             isToday,
             isThisWeek: isWeek,
             isThisMonth: isMonth
           });
         }
         if (t.type === 'OUT') { 
-          tProjectOut += t.amount; 
-          pOut += t.amount;
-          if (isToday) todayOutSum += t.amount;
-          if (isWeek) thisWeekOutSum += t.amount;
+          pOut += amt;
+          if (matchesSelectedYear) tProjectOut += amt;
+          if (isToday) todayOutSum += amt;
+          if (isWeek) thisWeekOutSum += amt;
 
           const catInfo = PROJECT_EXPENSE_CATEGORIES[t.expenseCategory] || PROJECT_EXPENSE_CATEGORIES.KHAC;
 
@@ -138,7 +144,7 @@ const Finance = () => {
             id: `p-out-${p.id}-${t.id || idx}`,
             type: 'OUT',
             date: t.date,
-            amount: t.amount,
+            amount: amt,
             note: t.note || 'Chi phí thi công',
             sourceType: 'CONSTRUCTION',
             sourceTypeName: 'Dự án Thi Công',
@@ -149,15 +155,16 @@ const Finance = () => {
             categoryLabel: catInfo.label,
             categoryIcon: catInfo.icon,
             categoryBadge: catInfo.badge,
+            matchesSelectedYear,
             isToday,
             isThisWeek: isWeek,
             isThisMonth: isMonth
           });
         }
       });
-      pBreakdown.push({ id: `C-${p.id}`, type: 'Thi công', name: p.name, in: pIn, out: pOut, totalValue: p.totalValue });
-      
-      if (p.startDate && p.startDate.startsWith(currentYear.toString())) {
+
+      if (matchesYearFilter(pYear, selectedYear)) {
+        pBreakdown.push({ id: `C-${p.id}`, type: 'Thi công', year: pYear, name: p.name, in: pIn, out: pOut, totalValue: p.totalValue });
         tContract += (Number(p.totalValue) || 0);
       }
     });
@@ -166,23 +173,26 @@ const Finance = () => {
     (designs || []).forEach(d => {
       let dIn = 0; 
       let dOut = 0;
+      const dYear = getProjectYear(d);
       (d.transactions || []).forEach((t, idx) => {
-        allTransactions.push(t);
+        const amt = Number(t.amount) || 0;
+        const tYear = getYearFromDate(t.date);
+        const matchesSelectedYear = matchesYearFilter(tYear, selectedYear);
         const isToday = t.date === todayStr;
         const isWeek = t.date >= mondayStr && t.date <= sundayStr;
         const isMonth = t.date && t.date.startsWith(currentMonthStr);
 
         if (t.type === 'IN') { 
-          tIn += t.amount; 
-          dIn += t.amount; 
-          if (isToday) todayInSum += t.amount;
-          if (isWeek) thisWeekInSum += t.amount;
+          dIn += amt; 
+          if (matchesSelectedYear) tIn += amt;
+          if (isToday) todayInSum += amt;
+          if (isWeek) thisWeekInSum += amt;
 
           allFinance.push({
             id: `d-in-${d.id}-${t.id || idx}`,
             type: 'IN',
             date: t.date,
-            amount: t.amount,
+            amount: amt,
             note: t.note || 'Thu tiền hợp đồng thiết kế',
             sourceType: 'DESIGN',
             sourceTypeName: 'Hồ sơ Thiết Kế',
@@ -193,22 +203,23 @@ const Finance = () => {
             categoryLabel: 'Tiền thu (Vào)',
             categoryIcon: '💰',
             categoryBadge: 'badge-success',
+            matchesSelectedYear,
             isToday,
             isThisWeek: isWeek,
             isThisMonth: isMonth
           });
         }
         if (t.type === 'OUT') { 
-          tProjectOut += t.amount; 
-          dOut += t.amount; 
-          if (isToday) todayOutSum += t.amount;
-          if (isWeek) thisWeekOutSum += t.amount;
+          dOut += amt;
+          if (matchesSelectedYear) tProjectOut += amt;
+          if (isToday) todayOutSum += amt;
+          if (isWeek) thisWeekOutSum += amt;
 
           allFinance.push({
             id: `d-out-${d.id}-${t.id || idx}`,
             type: 'OUT',
             date: t.date,
-            amount: t.amount,
+            amount: amt,
             note: t.note || 'Chi phí thiết kế',
             sourceType: 'DESIGN',
             sourceTypeName: 'Hồ sơ Thiết Kế',
@@ -219,23 +230,29 @@ const Finance = () => {
             categoryLabel: 'Chi phí thiết kế',
             categoryIcon: '📐',
             categoryBadge: 'badge-info',
+            matchesSelectedYear,
             isToday,
             isThisWeek: isWeek,
             isThisMonth: isMonth
           });
         }
       });
-      pBreakdown.push({ id: `D-${d.id}`, type: 'Thiết kế', name: d.name, in: dIn, out: dOut, totalValue: d.totalValue });
-      
-      if (d.startDate && d.startDate.startsWith(currentYear.toString())) {
+
+      if (matchesYearFilter(dYear, selectedYear)) {
+        pBreakdown.push({ id: `D-${d.id}`, type: 'Thiết kế', year: dYear, name: d.name, in: dIn, out: dOut, totalValue: d.totalValue });
         tContract += (Number(d.totalValue) || 0);
       }
     });
 
-    // 3. Quét Chi phí hoạt động công ty
+    // 3. Quét Chi phí hoạt động công ty (lọc theo date giao dịch trong năm đang chọn)
     (companyExpenses || []).forEach((exp, idx) => {
       const amt = Number(exp.amount) || 0;
-      tCompanyOut += amt;
+      const expYear = getYearFromDate(exp.date);
+      const matchesSelectedYear = matchesYearFilter(expYear, selectedYear);
+
+      if (matchesSelectedYear) {
+        tCompanyOut += amt;
+      }
 
       const isToday = exp.date === todayStr;
       const isWeek = exp.date >= mondayStr && exp.date <= sundayStr;
@@ -261,6 +278,7 @@ const Finance = () => {
         categoryLabel: catInfo.label,
         categoryIcon: catInfo.icon,
         categoryBadge: catInfo.badge,
+        matchesSelectedYear,
         isToday,
         isThisWeek: isWeek,
         isThisMonth: isMonth
@@ -269,28 +287,20 @@ const Finance = () => {
 
     const totalAllOut = tProjectOut + tCompanyOut;
 
-    // Gom nhóm theo tháng cho biểu đồ (năm hiện tại)
+    // Gom nhóm theo tháng cho biểu đồ (lọc theo date của giao dịch thuộc năm đang chọn)
     const months = Array.from({ length: 12 }, (_, i) => ({
       name: `T${i + 1}`,
       thu: 0,
       chi: 0
     }));
 
-    allTransactions.forEach(t => {
-      const date = new Date(t.date);
-      if (date.getFullYear() === currentYear) {
-        const monthIndex = date.getMonth();
-        if (t.type === 'IN') months[monthIndex].thu += t.amount;
-        if (t.type === 'OUT') months[monthIndex].chi += t.amount;
-      }
-    });
-
-    (companyExpenses || []).forEach(exp => {
-      const date = new Date(exp.date);
-      if (date.getFullYear() === currentYear) {
-        const monthIndex = date.getMonth();
-        months[monthIndex].chi += (Number(exp.amount) || 0);
-      }
+    allFinance.forEach(item => {
+      if (!item.matchesSelectedYear || !item.date) return;
+      const date = new Date(item.date);
+      if (Number.isNaN(date.getTime())) return;
+      const monthIndex = date.getMonth();
+      if (item.type === 'IN') months[monthIndex].thu += item.amount;
+      if (item.type === 'OUT') months[monthIndex].chi += item.amount;
     });
 
     return { 
@@ -307,7 +317,7 @@ const Finance = () => {
       projectBreakdown: pBreakdown,
       allFinanceItems: allFinance
     };
-  }, [projects, designs, companyExpenses]);
+  }, [projects, designs, companyExpenses, selectedYear]);
 
   // Bộ lọc cho Modal chi tiết
   const filteredModalItems = useMemo(() => {
@@ -316,9 +326,10 @@ const Finance = () => {
         // Lọc theo thời gian / phân hệ
         if (modalPeriod === 'TODAY' && !item.isToday) return false;
         if (modalPeriod === 'WEEK' && !item.isThisWeek) return false;
-        if (modalPeriod === 'MONTH' && !item.isThisMonth) return false;
-        if (modalPeriod === 'COMPANY' && item.sourceType !== 'COMPANY') return false;
-        if (modalPeriod === 'PROJECTS' && item.sourceType === 'COMPANY') return false;
+        if (modalPeriod === 'MONTH' && (!item.isThisMonth || !item.matchesSelectedYear)) return false;
+        if (modalPeriod === 'COMPANY' && (item.sourceType !== 'COMPANY' || !item.matchesSelectedYear)) return false;
+        if (modalPeriod === 'PROJECTS' && (item.sourceType === 'COMPANY' || !item.matchesSelectedYear)) return false;
+        if (modalPeriod === 'ALL' && !item.matchesSelectedYear) return false;
 
         // Lọc theo nguồn
         if (modalSourceFilter !== 'ALL' && item.sourceType !== modalSourceFilter) return false;
@@ -352,10 +363,10 @@ const Finance = () => {
   // Đếm số lượng theo chu kỳ
   const countToday = useMemo(() => (allFinanceItems || []).filter(e => e.isToday).length, [allFinanceItems]);
   const countWeek = useMemo(() => (allFinanceItems || []).filter(e => e.isThisWeek).length, [allFinanceItems]);
-  const countMonth = useMemo(() => (allFinanceItems || []).filter(e => e.isThisMonth).length, [allFinanceItems]);
-  const countAll = useMemo(() => (allFinanceItems || []).length, [allFinanceItems]);
-  const countCompany = useMemo(() => (allFinanceItems || []).filter(e => e.sourceType === 'COMPANY').length, [allFinanceItems]);
-  const countProjects = useMemo(() => (allFinanceItems || []).filter(e => e.sourceType !== 'COMPANY' && e.type === 'OUT').length, [allFinanceItems]);
+  const countMonth = useMemo(() => (allFinanceItems || []).filter(e => e.isThisMonth && e.matchesSelectedYear).length, [allFinanceItems]);
+  const countAll = useMemo(() => (allFinanceItems || []).filter(e => e.matchesSelectedYear).length, [allFinanceItems]);
+  const countCompany = useMemo(() => (allFinanceItems || []).filter(e => e.sourceType === 'COMPANY' && e.matchesSelectedYear).length, [allFinanceItems]);
+  const countProjects = useMemo(() => (allFinanceItems || []).filter(e => e.sourceType !== 'COMPANY' && e.type === 'OUT' && e.matchesSelectedYear).length, [allFinanceItems]);
 
   const openModal = (period, source = 'ALL', type = 'ALL') => {
     setModalPeriod(period);
@@ -410,11 +421,30 @@ const Finance = () => {
 
   return (
     <div className="page-container animate-fade-in">
-      <div className="page-header mb-6">
-        <h1 className="page-title text-2xl font-bold">Quản lý Tài chính Tổng hợp</h1>
-        <p className="page-subtitle text-secondary">
-          Dữ liệu được tự động tổng hợp từ sổ quỹ tất cả dự án và chi phí vận hành công ty.
-        </p>
+      <div className="page-header flex flex-wrap justify-between items-center gap-4 mb-6">
+        <div>
+          <h1 className="page-title text-2xl font-bold">Quản lý Tài chính Tổng hợp</h1>
+          <p className="page-subtitle text-secondary">
+            Dòng tiền & Chi phí công ty lọc theo ngày giao dịch; Giá trị HĐ & Bảng dự án lọc theo năm dự án.
+          </p>
+        </div>
+
+        {/* Bộ lọc năm tài chính */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-bold text-secondary flex items-center gap-1">
+            <Calendar size={14} /> Tài chính năm:
+          </span>
+          {YEAR_FILTER_OPTIONS.map((opt) => (
+            <button
+              key={opt.key}
+              type="button"
+              onClick={() => setSelectedYear(opt.key)}
+              className={`filter-pill ${selectedYear === opt.key ? 'active' : ''}`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Hàng 1: Dòng tiền chính & Lợi nhuận */}
@@ -425,7 +455,7 @@ const Finance = () => {
             <span className="font-bold">Tổng Thu</span>
           </div>
           <div className="text-2xl lg:text-3xl font-bold text-success">{totalIn.toLocaleString('vi-VN')} đ</div>
-          <div className="text-xs text-secondary mt-1">Từ thi công & thiết kế</div>
+          <div className="text-xs text-secondary mt-1">{getYearFilterLabel(selectedYear)} • Theo ngày GD</div>
         </div>
 
         <div className="card">
@@ -445,16 +475,16 @@ const Finance = () => {
             <span className="font-bold">Lợi Nhuận Ròng Thực Tế</span>
           </div>
           <div className="text-2xl lg:text-3xl font-bold">{profit.toLocaleString('vi-VN')} đ</div>
-          <div className="text-xs opacity-80 mt-1">Đã trừ chi phí nuôi công ty</div>
+          <div className="text-xs opacity-80 mt-1">{getYearFilterLabel(selectedYear)} • Đã trừ chi phí C.Ty</div>
         </div>
 
         <div className="card" style={{ border: '2px solid var(--info)' }}>
           <div className="flex items-center gap-2 mb-2 text-info">
             <DollarSign size={20} />
-            <span className="font-bold">Giá Trị HĐ Năm {new Date().getFullYear()}</span>
+            <span className="font-bold">Giá Trị HĐ ({getYearFilterLabel(selectedYear)})</span>
           </div>
           <div className="text-2xl lg:text-3xl font-bold text-info">{totalContractValue.toLocaleString('vi-VN')} đ</div>
-          <div className="text-xs text-secondary mt-1">Tổng hợp đồng ký năm nay</div>
+          <div className="text-xs text-secondary mt-1">Lọc theo năm của dự án ({projectBreakdown.length} DA/HS)</div>
         </div>
       </div>
 
@@ -606,7 +636,7 @@ const Finance = () => {
 
       {/* Biểu đồ dòng tiền */}
       <div className="card mb-8">
-        <h3 className="mb-4 font-bold">Biểu đồ Dòng tiền năm {new Date().getFullYear()}</h3>
+        <h3 className="mb-4 font-bold">Biểu đồ Dòng tiền - {getYearFilterLabel(selectedYear)}</h3>
         <div style={{ width: '100%', height: 400 }}>
           <ResponsiveContainer>
             <BarChart data={chartData}>
@@ -627,12 +657,15 @@ const Finance = () => {
 
       {/* Chi tiết Thu/Chi theo từng dự án */}
       <div className="card">
-        <h3 className="font-bold mb-4">Chi tiết Thu/Chi theo từng Dự án</h3>
+        <h3 className="font-bold mb-4">
+          Chi tiết Thu/Chi theo từng Dự án ({getYearFilterLabel(selectedYear)})
+        </h3>
         <div className="table-container">
           <table className="table">
             <thead>
               <tr>
                 <th>Loại</th>
+                <th>Năm</th>
                 <th>Tên dự án</th>
                 <th className="text-right">Tổng Hợp Đồng</th>
                 <th className="text-right">Đã Thu</th>
@@ -646,6 +679,11 @@ const Finance = () => {
                 return (
                   <tr key={p.id}>
                     <td><span className={`badge ${p.type === 'Thi công' ? 'badge-info' : 'badge-warning'}`}>{p.type}</span></td>
+                    <td>
+                      <span className={`badge ${p.year === 2026 ? 'badge-primary' : p.year === 2027 ? 'badge-info' : 'badge-secondary'}`}>
+                        {p.year || 'Khác'}
+                      </span>
+                    </td>
                     <td className="font-bold">
                       <Link 
                         to={p.type === 'Thi công' ? `/dashboard/construction/${p.id.replace('C-', '')}` : `/dashboard/design/${p.id.replace('D-', '')}`}
@@ -668,9 +706,17 @@ const Finance = () => {
                   </tr>
                 );
               })}
+              {projectBreakdown.length === 0 && (
+                <tr>
+                  <td colSpan="7" className="text-center text-secondary py-6">
+                    Không có dự án hoặc hồ sơ thiết kế nào thuộc nhóm {getYearFilterLabel(selectedYear).toLowerCase()}.
+                  </td>
+                </tr>
+              )}
               {/* Dòng tổng hợp Chi phí hoạt động công ty */}
               <tr style={{ background: 'rgba(59, 130, 246, 0.05)', borderTop: '2px solid var(--border-color)' }}>
                 <td><span className="badge badge-primary">Vận hành</span></td>
+                <td><span className="badge badge-secondary">{selectedYear === 'ALL' ? 'Tất cả' : selectedYear === 'OTHER' ? 'Khác' : selectedYear}</span></td>
                 <td className="font-bold">
                   <Link to="/dashboard/company-expenses" className="hover:underline text-primary flex items-center gap-1">
                     🏢 Chi phí hoạt động công ty (Lương, văn phòng, lặt vặt) <ExternalLink size={12} className="opacity-60" />

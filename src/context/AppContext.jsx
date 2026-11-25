@@ -114,7 +114,14 @@ export const AppProvider = ({ children }) => {
   // --- QUẢN LÝ DỰ ÁN ---
   const addProject = async (project) => {
     const newId = Date.now().toString();
-    await setDoc(doc(db, 'projects', newId), { ...project, id: newId, dailyLogs: [], transactions: [], isCompleted: false });
+    await setDoc(doc(db, 'projects', newId), {
+      ...project,
+      id: newId,
+      dailyLogs: [],
+      transactions: [],
+      variations: [],
+      isCompleted: false
+    });
   };
   const updateProject = async (id, updatedProject) => {
     await updateDoc(doc(db, 'projects', id.toString()), updatedProject);
@@ -150,23 +157,75 @@ export const AppProvider = ({ children }) => {
   const addTransaction = async (projectId, transaction) => {
     const project = projects.find(p => p.id.toString() === projectId.toString());
     if (project) {
-      const updatedTrans = [...(project.transactions || []), { ...transaction, id: Date.now().toString() }];
+      const transId = Date.now().toString();
+      const updatedTrans = [...(project.transactions || []), { ...transaction, id: transId }];
       await updateDoc(doc(db, 'projects', projectId.toString()), { transactions: updatedTrans });
+      return transId;
     }
+    return null;
   };
   const updateTransaction = async (projectId, transactionId, updatedTransaction) => {
     const project = projects.find(p => p.id.toString() === projectId.toString());
     if (project) {
-      const updatedTrans = project.transactions.map(t => t.id.toString() === transactionId.toString() ? { ...t, ...updatedTransaction } : t);
+      const updatedTrans = (project.transactions || []).map(t => t.id.toString() === transactionId.toString() ? { ...t, ...updatedTransaction } : t);
       await updateDoc(doc(db, 'projects', projectId.toString()), { transactions: updatedTrans });
     }
   };
   const removeTransaction = async (projectId, transactionId) => {
     const project = projects.find(p => p.id.toString() === projectId.toString());
     if (project) {
-      const updatedTrans = project.transactions.filter(t => t.id.toString() !== transactionId.toString());
+      const updatedTrans = (project.transactions || []).filter(t => t.id.toString() !== transactionId.toString());
       await updateDoc(doc(db, 'projects', projectId.toString()), { transactions: updatedTrans });
     }
+  };
+
+  // Logic Nội dung Phát sinh Công trình
+  const addProjectVariation = async (projectId, variation) => {
+    const project = projects.find(p => p.id.toString() === projectId.toString());
+    if (project) {
+      const varId = Date.now().toString();
+      const updatedVars = [...(project.variations || []), { ...variation, id: varId }];
+      await updateDoc(doc(db, 'projects', projectId.toString()), { variations: updatedVars });
+      return varId;
+    }
+    return null;
+  };
+  const updateProjectVariation = async (projectId, variationId, updatedVariation) => {
+    const project = projects.find(p => p.id.toString() === projectId.toString());
+    if (project) {
+      const updatedVars = (project.variations || []).map(v => v.id.toString() === variationId.toString() ? { ...v, ...updatedVariation } : v);
+      await updateDoc(doc(db, 'projects', projectId.toString()), { variations: updatedVars });
+    }
+  };
+  const removeProjectVariation = async (projectId, variationId) => {
+    const project = projects.find(p => p.id.toString() === projectId.toString());
+    if (project) {
+      const updatedVars = (project.variations || []).filter(v => v.id.toString() !== variationId.toString());
+      await updateDoc(doc(db, 'projects', projectId.toString()), { variations: updatedVars });
+    }
+  };
+
+  // Chuyển nhanh 1 khoản phát sinh sang Sổ quỹ và đánh dấu trạng thái trong 1 lần cập nhật
+  const transferVariationToFinance = async (projectId, variationId, transactionPayload, markAsPaid = true) => {
+    const project = projects.find(p => p.id.toString() === projectId.toString());
+    if (!project) return null;
+    const transId = Date.now().toString();
+    const updatedTrans = [...(project.transactions || []), { ...transactionPayload, id: transId }];
+    const updatedVars = (project.variations || []).map(v => {
+      if (v.id.toString() !== variationId.toString()) return v;
+      return {
+        ...v,
+        transferredToFinance: true,
+        linkedTransactionId: transId,
+        transferredAt: new Date().toISOString(),
+        status: markAsPaid ? 'PAID' : v.status
+      };
+    });
+    await updateDoc(doc(db, 'projects', projectId.toString()), {
+      transactions: updatedTrans,
+      variations: updatedVars
+    });
+    return transId;
   };
 
   // --- QUẢN LÝ THIẾT KẾ ---
@@ -234,6 +293,7 @@ export const AppProvider = ({ children }) => {
       theme, toggleTheme,
       projects, addProject, updateProject, removeProject,
       addDailyLog, updateDailyLog, removeDailyLog, addTransaction, updateTransaction, removeTransaction,
+      addProjectVariation, updateProjectVariation, removeProjectVariation, transferVariationToFinance,
       designs, addDesign, updateDesign, removeDesign,
       addDesignTransaction, updateDesignTransaction, removeDesignTransaction,
       pastProjects, addPastProject, updatePastProject, removePastProject,

@@ -1,18 +1,41 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import html2canvas from 'html2canvas';
-import { Camera, Plus, X, Edit, Trash2, AlertTriangle } from 'lucide-react';
+import { Camera, Plus, X, Edit, Trash2, AlertTriangle, Calendar } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import {
+  YEAR_FILTER_OPTIONS,
+  getProjectYear,
+  getYearFromDate,
+  matchesYearFilter,
+  getYearFilterLabel
+} from '../utils/yearHelpers';
 
 const Construction = () => {
   const { projects, addProject, updateProject, removeProject } = useAppContext();
   const tableRef = useRef(null);
   
+  const [yearFilter, setYearFilter] = useState('ALL');
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState({
-    name: '', manager: '', status: 'Mới khởi công', progress: 0, startDate: '', durationMonths: 1, totalValue: 0
+    name: '', manager: '', status: 'Mới khởi công', progress: 0, startDate: '', durationMonths: 1, totalValue: 0, year: new Date().getFullYear()
   });
+
+  const yearCounts = useMemo(() => {
+    const counts = { ALL: projects.length, '2026': 0, '2027': 0, OTHER: 0 };
+    projects.forEach((p) => {
+      const y = getProjectYear(p);
+      if (y === 2026) counts['2026'] += 1;
+      else if (y === 2027) counts['2027'] += 1;
+      else counts.OTHER += 1;
+    });
+    return counts;
+  }, [projects]);
+
+  const filteredProjects = useMemo(() => {
+    return projects.filter((p) => matchesYearFilter(getProjectYear(p), yearFilter));
+  }, [projects, yearFilter]);
 
   const handleExportImage = async () => {
     if (tableRef.current) {
@@ -21,7 +44,7 @@ const Construction = () => {
       });
       const dataUrl = canvas.toDataURL('image/png');
       const link = document.createElement('a');
-      link.download = 'tien-do-thi-cong.png';
+      link.download = `tien-do-thi-cong-${yearFilter.toLowerCase()}.png`;
       link.href = dataUrl;
       link.click();
     }
@@ -30,17 +53,39 @@ const Construction = () => {
   const openModal = (project = null) => {
     if (project) {
       setEditingId(project.id);
-      setFormData(project);
+      setFormData({
+        ...project,
+        totalValue: project.totalValue || 0,
+        year: getProjectYear(project) || new Date().getFullYear()
+      });
     } else {
+      const today = new Date().toISOString().slice(0, 10);
+      const defaultYear = yearFilter === '2026' ? 2026 : yearFilter === '2027' ? 2027 : new Date().getFullYear();
       setEditingId(null);
-      setFormData({ name: '', manager: '', status: 'Mới khởi công', progress: 0, startDate: new Date().toISOString().slice(0,10), durationMonths: 1 });
+      setFormData({
+        name: '',
+        manager: '',
+        status: 'Mới khởi công',
+        progress: 0,
+        startDate: today,
+        durationMonths: 1,
+        totalValue: 0,
+        year: defaultYear
+      });
     }
     setShowModal(true);
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    const data = { ...formData, progress: parseInt(formData.progress) || 0, durationMonths: parseInt(formData.durationMonths) || 1 };
+    const resolvedYear = parseInt(formData.year, 10) || getYearFromDate(formData.startDate) || new Date().getFullYear();
+    const data = {
+      ...formData,
+      progress: parseInt(formData.progress, 10) || 0,
+      durationMonths: parseInt(formData.durationMonths, 10) || 1,
+      totalValue: parseInt(formData.totalValue, 10) || 0,
+      year: resolvedYear
+    };
     
     if (editingId) {
       updateProject(editingId, data);
@@ -82,13 +127,33 @@ const Construction = () => {
         </div>
       </div>
 
+      {/* Bộ lọc phân loại công trình theo năm */}
+      <div className="flex flex-wrap items-center gap-2 mb-6">
+        <span className="text-xs font-bold text-secondary flex items-center gap-1 mr-1">
+          <Calendar size={14} /> Phân loại năm:
+        </span>
+        {YEAR_FILTER_OPTIONS.map((opt) => (
+          <button
+            key={opt.key}
+            type="button"
+            onClick={() => setYearFilter(opt.key)}
+            className={`filter-pill ${yearFilter === opt.key ? 'active' : ''}`}
+          >
+            {opt.label} ({yearCounts[opt.key]})
+          </button>
+        ))}
+      </div>
+
       <div className="card" ref={tableRef} style={{ padding: '2rem' }}>
-        <h2 style={{ marginBottom: '1.5rem', fontWeight: 'bold', fontSize: '1.25rem' }}>Bảng Tiến Độ Thi Công - Tháng 5/2026</h2>
+        <h2 style={{ marginBottom: '1.5rem', fontWeight: 'bold', fontSize: '1.25rem' }}>
+          Bảng Tiến Độ Thi Công - {getYearFilterLabel(yearFilter)}
+        </h2>
         <div className="table-container">
           <table className="table">
             <thead>
               <tr>
                 <th>Mã DA</th>
+                <th>Năm</th>
                 <th>Tên công trình</th>
                 <th>Người phụ trách</th>
                 <th>Thời gian</th>
@@ -97,11 +162,17 @@ const Construction = () => {
               </tr>
             </thead>
             <tbody>
-              {projects.map((p) => {
+              {filteredProjects.map((p) => {
                 const isDelayed = checkDelay(p.startDate, p.durationMonths, p.progress);
+                const projectYear = getProjectYear(p);
                 return (
                   <tr key={p.id}>
                     <td>#{p.id.toString().slice(-4)}</td>
+                    <td>
+                      <span className={`badge ${projectYear === 2026 ? 'badge-primary' : projectYear === 2027 ? 'badge-info' : 'badge-secondary'}`}>
+                        {projectYear || 'Khác'}
+                      </span>
+                    </td>
                     <td style={{ fontWeight: 500 }}>
                       {p.name}
                       {isDelayed && (
@@ -136,9 +207,11 @@ const Construction = () => {
                   </tr>
                 );
               })}
-              {projects.length === 0 && (
+              {filteredProjects.length === 0 && (
                 <tr>
-                  <td colSpan="6" className="text-center" style={{ padding: '2rem', color: 'var(--text-secondary)' }}>Chưa có dự án nào.</td>
+                  <td colSpan="7" className="text-center" style={{ padding: '2rem', color: 'var(--text-secondary)' }}>
+                    Không có dự án nào thuộc nhóm {getYearFilterLabel(yearFilter).toLowerCase()}.
+                  </td>
                 </tr>
               )}
             </tbody>
@@ -167,17 +240,64 @@ const Construction = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div className="input-group">
                   <label className="input-label">Ngày bắt đầu</label>
-                  <input required type="date" className="input-field" value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})} />
+                  <input
+                    required
+                    type="date"
+                    className="input-field"
+                    value={formData.startDate}
+                    onChange={e => {
+                      const val = e.target.value;
+                      const parsedYear = getYearFromDate(val);
+                      setFormData(prev => ({
+                        ...prev,
+                        startDate: val,
+                        year: !editingId && parsedYear ? parsedYear : prev.year
+                      }));
+                    }}
+                  />
                 </div>
+                <div className="input-group">
+                  <label className="input-label">Năm dự án (Phân loại)</label>
+                  <div className="flex gap-2">
+                    <input
+                      required
+                      type="number"
+                      min="2000"
+                      max="2100"
+                      className="input-field"
+                      style={{ flex: 1 }}
+                      value={formData.year}
+                      onChange={e => setFormData({ ...formData, year: e.target.value })}
+                    />
+                    <button
+                      type="button"
+                      className={`btn ${Number(formData.year) === 2026 ? 'btn-primary' : 'btn-outline'}`}
+                      style={{ padding: '0.4rem 0.65rem', fontSize: '0.75rem' }}
+                      onClick={() => setFormData({ ...formData, year: 2026 })}
+                    >
+                      2026
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn ${Number(formData.year) === 2027 ? 'btn-primary' : 'btn-outline'}`}
+                      style={{ padding: '0.4rem 0.65rem', fontSize: '0.75rem' }}
+                      onClick={() => setFormData({ ...formData, year: 2027 })}
+                    >
+                      2027
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
                 <div className="input-group">
                   <label className="input-label">Dự kiến thi công (tháng)</label>
                   <input required type="number" min="1" className="input-field" value={formData.durationMonths} onChange={e => setFormData({...formData, durationMonths: e.target.value})} />
                 </div>
-              </div>
-
-              <div className="input-group">
-                <label className="input-label">Tổng giá trị hợp đồng (VNĐ)</label>
-                <input required type="number" min="0" className="input-field" value={formData.totalValue} onChange={e => setFormData({...formData, totalValue: e.target.value})} />
+                <div className="input-group">
+                  <label className="input-label">Tổng giá trị hợp đồng (VNĐ)</label>
+                  <input required type="number" min="0" className="input-field" value={formData.totalValue} onChange={e => setFormData({...formData, totalValue: e.target.value})} />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
